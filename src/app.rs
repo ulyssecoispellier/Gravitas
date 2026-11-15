@@ -1,15 +1,15 @@
 use glam::DVec3;
+use std::time::Instant;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId};
-use std::time::Instant;
 
 use crate::physics::{Body, step_euler};
 
-const ORBIT_SPEED: f64 = 0.5;   // speed for a circular orbit
-const DT: f64 = 0.001;          // size of one physics step, in seconds
+const ORBIT_SPEED: f64 = 0.5; // speed for a circular orbit
+const DT: f64 = 0.001; // size of one physics step, in seconds
 
 pub struct App {
     window: Option<Window>,
@@ -45,18 +45,18 @@ impl ApplicationHandler for App {
                 let now = Instant::now();
                 let frame_time = (now - self.last_frame).as_secs_f64();
                 self.last_frame = now;
-            
+
                 self.accumulator += frame_time;
                 while self.accumulator >= DT {
                     step_euler(&mut self.bodies, DT);
                     self.accumulator -= DT;
                 }
-            
+
                 self.frame += 1;
                 if self.frame % 60 == 0 {
                     println!("{}", (self.bodies[1].pos() - self.bodies[0].pos()).length());
                 }
-            
+
                 if let Some(window) = &self.window {
                     window.request_redraw();
                 }
@@ -86,7 +86,7 @@ impl App {
             ],
             frame: 0,
             last_frame: Instant::now(),
-            accumulator: 0.0
+            accumulator: 0.0,
         }
     }
 }
