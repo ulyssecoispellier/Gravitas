@@ -8,18 +8,18 @@ use winit::window::Window;
 const PORTABILITY_MACOS_VERSION: Version = Version::new(1, 3, 216);
 
 pub struct Renderer {
-    entry: Entry,
+    _entry: Entry,
     instance: Instance,
 }
 
 impl Renderer {
     pub fn new(window: &Window) -> Result<Self> {
         let loader = unsafe { LibloadingLoader::new(LIBRARY)? };
-        let entry = unsafe { Entry::new(loader) }.map_err(|e| anyhow!("{}", e))?;
-        let instance = create_instance(window, &entry)?;
+        let _entry = unsafe { Entry::new(loader) }.map_err(|e| anyhow!("{}", e))?;
+        let instance = create_instance(window, &_entry)?;
 
         println!("✅ Vulkan instance created");
-        Ok(Self { entry, instance })
+        Ok(Self { _entry, instance })
     }
 }
 
