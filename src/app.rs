@@ -8,13 +8,15 @@ use std::time::Instant;
 
 use crate::physics::{Body, step_euler};
 
-const ORBIT_SPEED: f64 = 0.5; // speed for a circular orbit
+const ORBIT_SPEED: f64 = 0.5;   // speed for a circular orbit
+const DT: f64 = 0.001;          // size of one physics step, in seconds
 
 pub struct App {
     window: Option<Window>,
     bodies: Vec<Body>,
     frame: u64,
     last_frame: Instant,
+    accumulator: f64,
 }
 
 impl ApplicationHandler for App {
@@ -41,14 +43,20 @@ impl ApplicationHandler for App {
             }
             WindowEvent::RedrawRequested => {
                 let now = Instant::now();
-                
-                step_euler(&mut self.bodies, 0.001);
+                let frame_time = (now - self.last_frame).as_secs_f64();
+                self.last_frame = now;
+            
+                self.accumulator += frame_time;
+                while self.accumulator >= DT {
+                    step_euler(&mut self.bodies, DT);
+                    self.accumulator -= DT;
+                }
+            
                 self.frame += 1;
-
                 if self.frame % 60 == 0 {
                     println!("{}", (self.bodies[1].pos() - self.bodies[0].pos()).length());
                 }
-
+            
                 if let Some(window) = &self.window {
                     window.request_redraw();
                 }
@@ -78,6 +86,7 @@ impl App {
             ],
             frame: 0,
             last_frame: Instant::now(),
+            accumulator: 0.0
         }
     }
 }
