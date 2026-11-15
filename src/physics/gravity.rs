@@ -2,7 +2,8 @@ use glam::DVec3;
 
 use crate::physics::Body;
 
-pub const G: f64 = 1.0;
+pub const G: f64 = 1.0; // Gravitational constant
+pub const EPSILON: f64 = 0.05; // Softening constant
 
 pub fn acceleration_on(i: usize, bodies: &[Body]) -> DVec3 {
     let mut acc = DVec3::ZERO;
@@ -13,8 +14,9 @@ pub fn acceleration_on(i: usize, bodies: &[Body]) -> DVec3 {
         }
 
         let r = other.pos - bodies[i].pos;
-        let dist = r.length();
-        acc += G * other.mass * r / dist.powi(3);
+        let dist_squ = r.length_squared();
+        let soft = dist_squ + EPSILON * EPSILON;
+        acc += G * other.mass * r / soft.powf(1.5);
     }
 
     acc
