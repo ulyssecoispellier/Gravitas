@@ -4,6 +4,7 @@ use crate::app::App;
 
 mod app;
 mod physics;
+mod renderer;
 
 fn main() {
     let event_loop = EventLoop::new().unwrap();

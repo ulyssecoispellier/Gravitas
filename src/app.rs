@@ -7,6 +7,7 @@ use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId};
 
 use crate::physics::{Body, step_euler};
+use crate::renderer::Renderer;
 
 const ORBIT_SPEED: f64 = 0.5; // speed for a circular orbit
 const DT: f64 = 0.001; // size of one physics step, in seconds
@@ -17,13 +18,17 @@ pub struct App {
     frame: u64,
     last_frame: Instant,
     accumulator: f64,
+    renderer: Option<Renderer>,
 }
 
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let attributes = Window::default_attributes().with_title("Gravitas");
 
-        self.window = Some(event_loop.create_window(attributes).unwrap());
+        let window = event_loop.create_window(attributes).unwrap();
+
+        self.renderer = Some(Renderer::new(&window).unwrap());
+        self.window = Some(window);
     }
 
     fn window_event(
@@ -87,6 +92,7 @@ impl App {
             frame: 0,
             last_frame: Instant::now(),
             accumulator: 0.0,
+            renderer: None,
         }
     }
 }
