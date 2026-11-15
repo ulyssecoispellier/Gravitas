@@ -4,3 +4,4 @@ pub mod integrator;
 
 pub use body::Body;
 pub use gravity::acceleration_on;
+pub use integrator::step_euler;

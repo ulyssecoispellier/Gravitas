@@ -1,26 +1,12 @@
-use glam::DVec3;
+use winit::event_loop::EventLoop;
 
-use crate::physics::{Body, integrator::step_euler};
+use crate::app::App;
 
+mod app;
 mod physics;
 
 fn main() {
-    let mut bodies = vec![
-        Body::new(DVec3::new(0.0, 0.0, 0.0), DVec3::ZERO, 1.0, 0.1),
-        Body::new(DVec3::new(2.0, 0.0, 0.0), DVec3::ZERO, 1.0, 0.1),
-    ];
-
-    let dt = 0.001;
-    for step in 1..=30000 {
-        step_euler(&mut bodies, dt);
-
-        if step % 250 == 0 {
-            let t = step as f64 * dt;
-            println!(
-                "t = {:.4}   d = {:.4}",
-                t,
-                (bodies[1].pos() - bodies[0].pos()).length()
-            );
-        }
-    }
+    let event_loop = EventLoop::new().unwrap();
+    let mut app = App::new();
+    event_loop.run_app(&mut app).unwrap();
 }

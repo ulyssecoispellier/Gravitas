@@ -1,6 +1,5 @@
 use glam::DVec3;
 
-#[derive(Debug, Clone, Copy)]
 pub struct Body {
     pub(super) pos: DVec3,
     pub(super) vel: DVec3,
