@@ -6,11 +6,12 @@ use vulkanalia::Version;
 use vulkanalia::loader::{LIBRARY, LibloadingLoader};
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::vk::{
-    ExtDebugUtilsExtensionInstanceCommands, KhrSurfaceExtensionInstanceCommands,
-    KhrSwapchainExtensionDeviceCommands,
+    CommandBuffer, CommandPool, DebugUtilsMessengerEXT, PhysicalDevice, ExtDebugUtilsExtensionInstanceCommands, Fence, KhrSurfaceExtensionInstanceCommands, KhrSwapchainExtensionDeviceCommands, Queue, Semaphore, SurfaceKHR,
 };
 use vulkanalia::window as vk_window;
 use winit::window::Window;
+
+use crate::renderer;
 
 const PORTABILITY_MACOS_VERSION: Version = Version::new(1, 3, 216);
 const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
@@ -20,13 +21,18 @@ const VALIDATION_LAYER: vk::ExtensionName =
 pub struct Renderer {
     _entry: Entry,
     instance: Instance,
-    messenger: vk::DebugUtilsMessengerEXT,
-    physical_device: vk::PhysicalDevice,
+    messenger: DebugUtilsMessengerEXT,
+    physical_device: PhysicalDevice,
     graphics_family: u32,
     device: Device,
-    graphics_queue: vk::Queue,
-    surface: vk::SurfaceKHR,
+    graphics_queue: Queue,
+    surface: SurfaceKHR,
     swapchain: Swapchain,
+    command_pool: CommandPool,
+    command_buffer: CommandBuffer,
+    image_available: Semaphore,
+    render_finished: Vec<Semaphore>,
+    in_flight: Fence,
 }
 
 impl Renderer {
@@ -45,6 +51,23 @@ impl Renderer {
             create_logical_device(&instance, physical_device, graphics_family)?;
         let swapchain = create_swapchain(window, &instance, &device, physical_device, surface)?;
 
+        let pool_info = vk::CommandPoolCreateInfo::builder()
+            .queue_family_index(graphics_family)
+            .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
+        let command_pool = unsafe { device.create_command_pool(&pool_info, None)? };
+
+        let alloc_info = vk::CommandBufferAllocateInfo::builder()
+            .command_pool(command_pool)
+            .level(vk::CommandBufferLevel::PRIMARY)
+            .command_buffer_count(1);
+        let command_buffer = unsafe { device.allocate_command_buffers(&alloc_info)? }[0];
+
+        let image_available = unsafe { device.create_semaphore(&vk::SemaphoreCreateInfo::builder(), None)? };
+        let render_finished = (0..swapchain.images.len())
+            .map(|_| unsafe { device.create_semaphore(&vk::SemaphoreCreateInfo::builder(), None) })
+            .collect::<Result<Vec<_>, _>>()?;
+        let in_flight = unsafe { device.create_fence(&vk::FenceCreateInfo::builder().flags(vk::FenceCreateFlags::SIGNALED), None)? };
+
         println!(
             "Nb of img : {:?} | Width : {:?} | Height {:?} | Format : {:?}",
             swapchain.images.len(),
@@ -52,6 +75,7 @@ impl Renderer {
             swapchain.extent.height,
             swapchain.format,
         );
+
         Ok(Self {
             _entry,
             instance,
@@ -62,6 +86,11 @@ impl Renderer {
             graphics_queue,
             surface,
             swapchain,
+            command_pool,
+            command_buffer,
+            image_available,
+            render_finished,
+            in_flight,
         })
     }
 }
@@ -69,6 +98,11 @@ impl Renderer {
 impl Drop for Renderer {
     fn drop(&mut self) {
         unsafe {
+            self.device.device_wait_idle().unwrap();
+            self.device.destroy_semaphore(self.image_available, None);
+            for &r_f in &self.render_finished { self.device.destroy_semaphore(r_f, None); }
+            self.device.destroy_fence(self.in_flight, None);
+            self.device.destroy_command_pool(self.command_pool, None);
             for &img_view in &self.swapchain.image_views {
                 self.device.destroy_image_view(img_view, None);
             }
