@@ -20,6 +20,8 @@ pub struct Renderer {
     messenger: vk::DebugUtilsMessengerEXT,
     physical_device: vk::PhysicalDevice,
     graphics_family: u32,
+    device: Device,
+    graphics_queue: vk::Queue,
 }
 
 impl Renderer {
@@ -32,16 +34,19 @@ impl Renderer {
         } else {
             vk::DebugUtilsMessengerEXT::null()
         };
-
         let (physical_device, graphics_family) = pick_physical_device(&instance)?;
+        let (device, graphics_queue) =
+            create_logical_device(&instance, physical_device, graphics_family)?;
 
-        println!("✅ Vulkan instance created");
+        println!("✅ Vulkan device created");
         Ok(Self {
             _entry,
             instance,
             messenger,
             physical_device,
             graphics_family,
+            device,
+            graphics_queue,
         })
     }
 }
@@ -49,6 +54,7 @@ impl Renderer {
 impl Drop for Renderer {
     fn drop(&mut self) {
         unsafe {
+            self.device.destroy_device(None);
             if VALIDATION_ENABLED {
                 self.instance
                     .destroy_debug_utils_messenger_ext(self.messenger, None);
@@ -155,10 +161,11 @@ fn pick_physical_device(instance: &Instance) -> Result<(vk::PhysicalDevice, u32)
     for device in devices {
         let props = unsafe { instance.get_physical_device_properties(device) };
         println!(
-            "GPU: {} | Vulkan {}.{}",
+            "GPU: {} | Vulkan {}.{}.{}",
             props.device_name,
             vk::version_major(props.api_version),
             vk::version_minor(props.api_version),
+            vk::version_patch(props.api_version),
         );
 
         let families = unsafe { instance.get_physical_device_queue_family_properties(device) };
@@ -197,13 +204,12 @@ fn create_logical_device(
         .queue_priorities(queue_priorities);
     let queue_infos = &[queue_info];
 
-    let available_extensions = unsafe {
-        instance.enumerate_device_extension_properties(physical_device, None)?
-    }
-    .iter()
-    .map(|e| e.extension_name)
-    .collect::<HashSet<_>>();
-    
+    let available_extensions =
+        unsafe { instance.enumerate_device_extension_properties(physical_device, None)? }
+            .iter()
+            .map(|e| e.extension_name)
+            .collect::<HashSet<_>>();
+
     let mut extensions = Vec::new();
     if available_extensions.contains(&vk::KHR_PORTABILITY_SUBSET_EXTENSION.name) {
         extensions.push(vk::KHR_PORTABILITY_SUBSET_EXTENSION.name.as_ptr());
@@ -225,6 +231,6 @@ fn create_logical_device(
 
     let device = unsafe { instance.create_device(physical_device, &info, None)? };
     let queue = unsafe { device.get_device_queue(graphics_family, 0) };
-    
+
     Ok((device, queue))
 }
