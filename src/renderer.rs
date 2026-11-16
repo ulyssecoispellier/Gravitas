@@ -6,12 +6,11 @@ use vulkanalia::Version;
 use vulkanalia::loader::{LIBRARY, LibloadingLoader};
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::vk::{
-    CommandBuffer, CommandPool, DebugUtilsMessengerEXT, PhysicalDevice, ExtDebugUtilsExtensionInstanceCommands, Fence, KhrSurfaceExtensionInstanceCommands, KhrSwapchainExtensionDeviceCommands, Queue, Semaphore, SurfaceKHR,
+    ExtDebugUtilsExtensionInstanceCommands, KhrSurfaceExtensionInstanceCommands,
+    KhrSwapchainExtensionDeviceCommands,
 };
 use vulkanalia::window as vk_window;
 use winit::window::Window;
-
-use crate::renderer;
 
 const PORTABILITY_MACOS_VERSION: Version = Version::new(1, 3, 216);
 const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
@@ -21,18 +20,18 @@ const VALIDATION_LAYER: vk::ExtensionName =
 pub struct Renderer {
     _entry: Entry,
     instance: Instance,
-    messenger: DebugUtilsMessengerEXT,
-    physical_device: PhysicalDevice,
+    messenger: vk::DebugUtilsMessengerEXT,
+    physical_device: vk::PhysicalDevice,
     graphics_family: u32,
     device: Device,
-    graphics_queue: Queue,
-    surface: SurfaceKHR,
+    graphics_queue: vk::Queue,
+    surface: vk::SurfaceKHR,
     swapchain: Swapchain,
-    command_pool: CommandPool,
-    command_buffer: CommandBuffer,
-    image_available: Semaphore,
-    render_finished: Vec<Semaphore>,
-    in_flight: Fence,
+    command_pool: vk::CommandPool,
+    command_buffer: vk::CommandBuffer,
+    image_available: vk::Semaphore,
+    render_finished: Vec<vk::Semaphore>,
+    in_flight: vk::Fence,
 }
 
 impl Renderer {

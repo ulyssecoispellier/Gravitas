@@ -21,8 +21,8 @@ It is also a learning project: the goal is to understand Rust and Vulkan from th
 | Logical device + graphics queue | ✅ Done |
 | Window surface + presentation support | ✅ Done |
 | Swapchain + image views | ✅ Done |
-| Command buffers + synchronization | 🚧 Next |
-| Clear the window to a colour | ⬜ Planned |
+| Command buffers + synchronization | ✅ Done |
+| Clear the window to a colour (first frame) | 🚧 Next |
 | First triangle | ⬜ Planned |
 | Rocky planet (mesh, textures, depth buffer) | ⬜ Planned |
 | Orbit camera (mouse) | ⬜ Planned |
@@ -30,7 +30,7 @@ It is also a learning project: the goal is to understand Rust and Vulkan from th
 | Atmospheric scattering | ⬜ Planned |
 | Bloom + HDR post-processing | ⬜ Planned |
 
-Right now, running the program opens a window, runs the physics in real time, and sets up Vulkan: it connects Vulkan to the window (surface), lists the available GPUs, picks the best one that can draw and present to the window, opens a logical device on it, and creates a swapchain (the images that will be shown in the window). Nothing is drawn yet.
+Right now, running the program opens a window, runs the physics in real time, and sets up Vulkan: it connects Vulkan to the window (surface), lists the available GPUs, picks the best one that can draw and present to the window, opens a logical device on it, creates a swapchain (the images that will be shown in the window), and prepares a command buffer and the synchronization objects needed to draw a frame. Nothing is drawn yet.
 
 ---
 
