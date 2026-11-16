@@ -58,9 +58,6 @@ impl ApplicationHandler for App {
                 }
 
                 self.frame += 1;
-                if self.frame % 60 == 0 {
-                    println!("{}", (self.bodies[1].pos() - self.bodies[0].pos()).length());
-                }
 
                 if let Some(window) = &self.window {
                     window.request_redraw();

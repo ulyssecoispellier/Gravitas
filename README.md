@@ -16,15 +16,18 @@ It is also a learning project: the goal is to understand Rust and Vulkan from th
 | Fixed-timestep integrator (semi-implicit Euler) | ✅ Done |
 | Window + game loop (`winit`) | ✅ Done |
 | Vulkan instance | ✅ Done |
-| Validation layers + GPU selection | 🚧 Next |
-| Swapchain, first triangle | ⬜ Planned |
+| Validation layers (debug builds) | ✅ Done |
+| GPU selection | ✅ Done |
+| Logical device + graphics queue | ✅ Done |
+| Surface + swapchain (clear the window to a colour) | 🚧 Next |
+| First triangle | ⬜ Planned |
 | Rocky planet (mesh, textures, depth buffer) | ⬜ Planned |
 | Orbit camera (mouse) | ⬜ Planned |
 | Star + gas giant, ray-traced in shaders | ⬜ Planned |
 | Atmospheric scattering | ⬜ Planned |
 | Bloom + HDR post-processing | ⬜ Planned |
 
-Right now, running the program opens a window, runs the physics in real time and prints the distance between the bodies to the terminal.
+Right now, running the program opens a window, runs the physics in real time, and sets up Vulkan: it lists the available GPUs, picks the best one, and opens a logical device on it. Nothing is drawn yet.
 
 ---
 
@@ -49,7 +52,7 @@ A hybrid renderer:
 src/
 ├── main.rs              # entry point: creates the event loop and runs the app
 ├── app.rs               # window, input, game loop, fixed timestep
-├── renderer.rs          # Vulkan setup
+├── renderer.rs          # Vulkan: instance, validation, GPU selection, device
 ├── physics.rs           # physics module (re-exports)
 └── physics/
     ├── body.rs          # Body: position, velocity, mass, radius
@@ -63,7 +66,7 @@ src/
 
 ### Requirements
 - [Rust](https://rustup.rs) (edition 2024)
-- A Vulkan driver
+- A Vulkan **1.3** driver
 
 ### macOS (Apple Silicon)
 Install Vulkan through Homebrew:
@@ -83,8 +86,11 @@ The project's `.cargo/config.toml` tells the program where Homebrew installed Vu
 ### Run
 
 ```bash
-cargo run
+cargo run              # debug build, Vulkan validation layers ON
+cargo run --release    # optimized build, validation layers OFF
 ```
+
+In debug builds, Vulkan validation messages are printed to the terminal (🟡 warnings, 🔴 errors).
 
 ### Controls
 | Key | Action |
