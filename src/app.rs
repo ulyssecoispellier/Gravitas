@@ -13,12 +13,12 @@ const ORBIT_SPEED: f64 = 0.5; // speed for a circular orbit
 const DT: f64 = 0.001; // size of one physics step, in seconds
 
 pub struct App {
+    renderer: Option<Renderer>,
     window: Option<Window>,
     bodies: Vec<Body>,
     frame: u64,
     last_frame: Instant,
     accumulator: f64,
-    renderer: Option<Renderer>,
 }
 
 impl ApplicationHandler for App {

@@ -5,7 +5,7 @@ use std::ffi::{CStr, c_void};
 use vulkanalia::Version;
 use vulkanalia::loader::{LIBRARY, LibloadingLoader};
 use vulkanalia::prelude::v1_0::*;
-use vulkanalia::vk::ExtDebugUtilsExtensionInstanceCommands;
+use vulkanalia::vk::{ExtDebugUtilsExtensionInstanceCommands, KhrSurfaceExtensionInstanceCommands};
 use vulkanalia::window as vk_window;
 use winit::window::Window;
 
@@ -22,6 +22,7 @@ pub struct Renderer {
     graphics_family: u32,
     device: Device,
     graphics_queue: vk::Queue,
+    surface: vk::SurfaceKHR,
 }
 
 impl Renderer {
@@ -34,7 +35,8 @@ impl Renderer {
         } else {
             vk::DebugUtilsMessengerEXT::null()
         };
-        let (physical_device, graphics_family) = pick_physical_device(&instance)?;
+        let surface = unsafe { vk_window::create_surface(&instance, &window, &window)? };
+        let (physical_device, graphics_family) = pick_physical_device(&instance, surface)?;
         let (device, graphics_queue) =
             create_logical_device(&instance, physical_device, graphics_family)?;
 
@@ -47,6 +49,7 @@ impl Renderer {
             graphics_family,
             device,
             graphics_queue,
+            surface,
         })
     }
 }
@@ -55,6 +58,7 @@ impl Drop for Renderer {
     fn drop(&mut self) {
         unsafe {
             self.device.destroy_device(None);
+            self.instance.destroy_surface_khr(self.surface, None);
             if VALIDATION_ENABLED {
                 self.instance
                     .destroy_debug_utils_messenger_ext(self.messenger, None);
@@ -154,7 +158,10 @@ extern "system" fn debug_callback(
     vk::FALSE
 }
 
-fn pick_physical_device(instance: &Instance) -> Result<(vk::PhysicalDevice, u32)> {
+fn pick_physical_device(
+    instance: &Instance,
+    surface: vk::SurfaceKHR,
+) -> Result<(vk::PhysicalDevice, u32)> {
     let devices = unsafe { instance.enumerate_physical_devices()? };
 
     let mut best: Option<(vk::PhysicalDevice, u32, u32)> = None;
@@ -170,9 +177,18 @@ fn pick_physical_device(instance: &Instance) -> Result<(vk::PhysicalDevice, u32)
 
         let families = unsafe { instance.get_physical_device_queue_family_properties(device) };
 
-        let graphics = families
-            .iter()
-            .position(|f| f.queue_flags.contains(vk::QueueFlags::GRAPHICS));
+        let mut graphics = None;
+        for (i, family) in families.iter().enumerate() {
+            let can_draw = family.queue_flags.contains(vk::QueueFlags::GRAPHICS);
+            let can_present = unsafe {
+                instance.get_physical_device_surface_support_khr(device, i as u32, surface)?
+            };
+
+            if can_draw && can_present {
+                graphics = Some(i);
+                break;
+            }
+        }
 
         if let Some(index) = graphics {
             let is_better = match best {
@@ -210,7 +226,7 @@ fn create_logical_device(
             .map(|e| e.extension_name)
             .collect::<HashSet<_>>();
 
-    let mut extensions = Vec::new();
+    let mut extensions = vec![vk::KHR_SWAPCHAIN_EXTENSION.name.as_ptr()];
     if available_extensions.contains(&vk::KHR_PORTABILITY_SUBSET_EXTENSION.name) {
         extensions.push(vk::KHR_PORTABILITY_SUBSET_EXTENSION.name.as_ptr());
     }
