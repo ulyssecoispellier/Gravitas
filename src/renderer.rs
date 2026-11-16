@@ -151,6 +151,7 @@ extern "system" fn debug_callback(
 fn pick_physical_device(instance: &Instance) -> Result<(vk::PhysicalDevice, u32)> {
     let devices = unsafe { instance.enumerate_physical_devices()? };
 
+    let mut best: Option<(vk::PhysicalDevice, u32, u32)> = None;
     for device in devices {
         let props = unsafe { instance.get_physical_device_properties(device) };
         println!(
@@ -167,9 +168,20 @@ fn pick_physical_device(instance: &Instance) -> Result<(vk::PhysicalDevice, u32)
             .position(|f| f.queue_flags.contains(vk::QueueFlags::GRAPHICS));
 
         if let Some(index) = graphics {
-            return Ok((device, index as u32));
+            let is_better = match best {
+                None => true,
+                Some((_, _, best_version)) => props.api_version > best_version,
+            };
+
+            if is_better {
+                best = Some((device, index as u32, props.api_version));
+                println!("  → new best GPU");
+            }
         }
     }
 
-    Err(anyhow!("No suitable GPU found."))
+    match best {
+        Some((device, family, _)) => Ok((device, family)),
+        None => Err(anyhow!("No suitable GPU found.")),
+    }
 }
