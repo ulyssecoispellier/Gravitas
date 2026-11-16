@@ -5,7 +5,10 @@ use std::ffi::{CStr, c_void};
 use vulkanalia::Version;
 use vulkanalia::loader::{LIBRARY, LibloadingLoader};
 use vulkanalia::prelude::v1_0::*;
-use vulkanalia::vk::{ExtDebugUtilsExtensionInstanceCommands, KhrSurfaceExtensionInstanceCommands};
+use vulkanalia::vk::{
+    ExtDebugUtilsExtensionInstanceCommands, KhrSurfaceExtensionInstanceCommands,
+    KhrSwapchainExtensionDeviceCommands,
+};
 use vulkanalia::window as vk_window;
 use winit::window::Window;
 
@@ -23,6 +26,7 @@ pub struct Renderer {
     device: Device,
     graphics_queue: vk::Queue,
     surface: vk::SurfaceKHR,
+    swapchain: Swapchain,
 }
 
 impl Renderer {
@@ -39,8 +43,15 @@ impl Renderer {
         let (physical_device, graphics_family) = pick_physical_device(&instance, surface)?;
         let (device, graphics_queue) =
             create_logical_device(&instance, physical_device, graphics_family)?;
+        let swapchain = create_swapchain(window, &instance, &device, physical_device, surface)?;
 
-        println!("✅ Vulkan device created");
+        println!(
+            "Nb of img : {:?} | Width : {:?} | Height {:?} | Format : {:?}",
+            swapchain.images.len(),
+            swapchain.extent.width,
+            swapchain.extent.height,
+            swapchain.format,
+        );
         Ok(Self {
             _entry,
             instance,
@@ -50,6 +61,7 @@ impl Renderer {
             device,
             graphics_queue,
             surface,
+            swapchain,
         })
     }
 }
@@ -57,6 +69,11 @@ impl Renderer {
 impl Drop for Renderer {
     fn drop(&mut self) {
         unsafe {
+            for &img_view in &self.swapchain.image_views {
+                self.device.destroy_image_view(img_view, None);
+            }
+            self.device
+                .destroy_swapchain_khr(self.swapchain.handle, None);
             self.device.destroy_device(None);
             self.instance.destroy_surface_khr(self.surface, None);
             if VALIDATION_ENABLED {
@@ -249,4 +266,109 @@ fn create_logical_device(
     let queue = unsafe { device.get_device_queue(graphics_family, 0) };
 
     Ok((device, queue))
+}
+
+struct Swapchain {
+    handle: vk::SwapchainKHR,
+    format: vk::Format,
+    extent: vk::Extent2D,
+    images: Vec<vk::Image>,
+    image_views: Vec<vk::ImageView>,
+}
+
+fn create_swapchain(
+    window: &Window,
+    instance: &Instance,
+    device: &Device,
+    physical_device: vk::PhysicalDevice,
+    surface: vk::SurfaceKHR,
+) -> Result<Swapchain> {
+    let capabilities =
+        unsafe { instance.get_physical_device_surface_capabilities_khr(physical_device, surface)? };
+    let formats =
+        unsafe { instance.get_physical_device_surface_formats_khr(physical_device, surface)? };
+    let present_modes = unsafe {
+        instance.get_physical_device_surface_present_modes_khr(physical_device, surface)?
+    };
+
+    // Pixel format: prefer standard sRGB colours, otherwise take the first one available
+    let format = formats
+        .iter()
+        .cloned()
+        .find(|f| {
+            f.format == vk::Format::B8G8R8A8_SRGB
+                && f.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR
+        })
+        .unwrap_or(formats[0]);
+
+    // Present mode: prefer MAILBOX, otherwise FIFO (always available)
+    let present_mode = present_modes
+        .iter()
+        .cloned()
+        .find(|m| *m == vk::PresentModeKHR::MAILBOX)
+        .unwrap_or(vk::PresentModeKHR::FIFO);
+
+    let extent = if capabilities.current_extent.width != u32::MAX {
+        capabilities.current_extent
+    } else {
+        let size = window.inner_size();
+        vk::Extent2D {
+            width: size.width.clamp(
+                capabilities.min_image_extent.width,
+                capabilities.max_image_extent.width,
+            ),
+            height: size.height.clamp(
+                capabilities.min_image_extent.height,
+                capabilities.max_image_extent.height,
+            ),
+        }
+    };
+
+    let mut image_count = capabilities.min_image_count + 1;
+    if capabilities.max_image_count != 0 && image_count > capabilities.max_image_count {
+        image_count = capabilities.max_image_count;
+    }
+
+    let info = vk::SwapchainCreateInfoKHR::builder()
+        .surface(surface) // draw into this window
+        .min_image_count(image_count) // how many images (step 5)
+        .image_format(format.format) // pixel format (step 3)
+        .image_color_space(format.color_space)
+        .image_extent(extent) // size in pixels (step 4)
+        .image_array_layers(1) // 1 layer (2 would be for VR)
+        .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT) // we'll draw colours into them
+        .image_sharing_mode(vk::SharingMode::EXCLUSIVE) // used by one queue family only
+        .pre_transform(capabilities.current_transform) // no rotation/flip
+        .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE) // window isn't see-through
+        .present_mode(present_mode) // MAILBOX or FIFO (step 3)
+        .clipped(true); // skip pixels hidden by other windows
+
+    let handle = unsafe { device.create_swapchain_khr(&info, None)? };
+    let images = unsafe { device.get_swapchain_images_khr(handle)? };
+
+    let image_views = images
+        .iter()
+        .map(|&image| {
+            let range = vk::ImageSubresourceRange::builder()
+                .aspect_mask(vk::ImageAspectFlags::COLOR) // it's a colour image
+                .base_mip_level(0)
+                .level_count(1)
+                .base_array_layer(0)
+                .layer_count(1);
+            let info = vk::ImageViewCreateInfo::builder()
+                .image(image)
+                .view_type(vk::ImageViewType::_2D) // read it as a flat 2D image
+                .format(format.format)
+                .subresource_range(range);
+            unsafe { device.create_image_view(&info, None) }
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(Swapchain {
+        handle,
+        format: format.format,
+        extent,
+        images,
+        image_views,
+    })
 }
