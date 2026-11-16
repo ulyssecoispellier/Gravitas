@@ -81,7 +81,7 @@ fn create_instance(window: &Window, entry: &Entry) -> Result<Instance> {
         .application_version(vk::make_version(0, 1, 0))
         .engine_name(b"No Engine\0")
         .engine_version(vk::make_version(1, 0, 0))
-        .api_version(vk::make_version(1, 0, 0));
+        .api_version(vk::make_version(1, 3, 0));
 
     // 2. Extensions needed to draw into a window on this OS
     let mut extensions = vk_window::get_required_instance_extensions(window)
@@ -184,4 +184,47 @@ fn pick_physical_device(instance: &Instance) -> Result<(vk::PhysicalDevice, u32)
         Some((device, family, _)) => Ok((device, family)),
         None => Err(anyhow!("No suitable GPU found.")),
     }
+}
+
+fn create_logical_device(
+    instance: &Instance,
+    physical_device: vk::PhysicalDevice,
+    graphics_family: u32,
+) -> Result<(Device, vk::Queue)> {
+    let queue_priorities = &[1.0];
+    let queue_info = vk::DeviceQueueCreateInfo::builder()
+        .queue_family_index(graphics_family)
+        .queue_priorities(queue_priorities);
+    let queue_infos = &[queue_info];
+
+    let available_extensions = unsafe {
+        instance.enumerate_device_extension_properties(physical_device, None)?
+    }
+    .iter()
+    .map(|e| e.extension_name)
+    .collect::<HashSet<_>>();
+    
+    let mut extensions = Vec::new();
+    if available_extensions.contains(&vk::KHR_PORTABILITY_SUBSET_EXTENSION.name) {
+        extensions.push(vk::KHR_PORTABILITY_SUBSET_EXTENSION.name.as_ptr());
+    }
+
+    let layers = if VALIDATION_ENABLED {
+        vec![VALIDATION_LAYER.as_ptr()]
+    } else {
+        Vec::new()
+    };
+
+    let features = vk::PhysicalDeviceFeatures::builder();
+
+    let info = vk::DeviceCreateInfo::builder()
+        .queue_create_infos(queue_infos)
+        .enabled_layer_names(&layers)
+        .enabled_extension_names(&extensions)
+        .enabled_features(&features);
+
+    let device = unsafe { instance.create_device(physical_device, &info, None)? };
+    let queue = unsafe { device.get_device_queue(graphics_family, 0) };
+    
+    Ok((device, queue))
 }
