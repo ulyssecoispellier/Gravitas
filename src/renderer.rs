@@ -1,10 +1,10 @@
 use std::collections::HashSet;
 
-use anyhow::{Result, anyhow};
+use anyhow::{Ok, Result, anyhow};
 use std::ffi::{CStr, c_void};
 use vulkanalia::Version;
 use vulkanalia::loader::{LIBRARY, LibloadingLoader};
-use vulkanalia::prelude::v1_0::*;
+use vulkanalia::prelude::v1_3::*;
 use vulkanalia::vk::{
     ExtDebugUtilsExtensionInstanceCommands, KhrSurfaceExtensionInstanceCommands,
     KhrSwapchainExtensionDeviceCommands,
@@ -36,6 +36,7 @@ pub struct Renderer {
 
 impl Renderer {
     pub fn new(window: &Window) -> Result<Self> {
+        // 1. Connect to Vulkan
         let loader = unsafe { LibloadingLoader::new(LIBRARY)? };
         let _entry = unsafe { Entry::new(loader) }.map_err(|e| anyhow!("{}", e))?;
         let instance = create_instance(window, &_entry)?;
@@ -44,12 +45,17 @@ impl Renderer {
         } else {
             vk::DebugUtilsMessengerEXT::null()
         };
+
+        // 2. Link Vulkan to the window, pick a GPU, open a session on it
         let surface = unsafe { vk_window::create_surface(&instance, &window, &window)? };
         let (physical_device, graphics_family) = pick_physical_device(&instance, surface)?;
         let (device, graphics_queue) =
             create_logical_device(&instance, physical_device, graphics_family)?;
+
+        // 3. The images that will be shown in the window
         let swapchain = create_swapchain(window, &instance, &device, physical_device, surface)?;
 
+        // 4. Where we record drawing commands
         let pool_info = vk::CommandPoolCreateInfo::builder()
             .queue_family_index(graphics_family)
             .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
@@ -61,11 +67,18 @@ impl Renderer {
             .command_buffer_count(1);
         let command_buffer = unsafe { device.allocate_command_buffers(&alloc_info)? }[0];
 
-        let image_available = unsafe { device.create_semaphore(&vk::SemaphoreCreateInfo::builder(), None)? };
+        // 5. Synchronization: GPU↔GPU (semaphores) and GPU→CPU (fence)
+        let image_available =
+            unsafe { device.create_semaphore(&vk::SemaphoreCreateInfo::builder(), None)? };
         let render_finished = (0..swapchain.images.len())
             .map(|_| unsafe { device.create_semaphore(&vk::SemaphoreCreateInfo::builder(), None) })
             .collect::<Result<Vec<_>, _>>()?;
-        let in_flight = unsafe { device.create_fence(&vk::FenceCreateInfo::builder().flags(vk::FenceCreateFlags::SIGNALED), None)? };
+        let in_flight = unsafe {
+            device.create_fence(
+                &vk::FenceCreateInfo::builder().flags(vk::FenceCreateFlags::SIGNALED),
+                None,
+            )?
+        };
 
         println!(
             "Nb of img : {:?} | Width : {:?} | Height {:?} | Format : {:?}",
@@ -94,12 +107,97 @@ impl Renderer {
     }
 }
 
+impl Renderer {
+    fn record_commands(&self, i: usize) -> Result<()> {
+        unsafe {
+            self.device.begin_command_buffer(
+                self.command_buffer,
+                &vk::CommandBufferBeginInfo::builder(),
+            )?;
+
+            let range = vk::ImageSubresourceRange::builder()
+                .aspect_mask(vk::ImageAspectFlags::COLOR)
+                .level_count(1)
+                .layer_count(1);
+
+            let to_draw = vk::ImageMemoryBarrier::builder()
+                .old_layout(vk::ImageLayout::UNDEFINED)
+                .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                .src_access_mask(vk::AccessFlags::empty())
+                .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .image(self.swapchain.images[i])
+                .subresource_range(range);
+
+            self.device.cmd_pipeline_barrier(
+                self.command_buffer,
+                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT, // wait for this stage...
+                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT, // ...before this stage
+                vk::DependencyFlags::empty(),
+                &[] as &[vk::MemoryBarrier],
+                &[] as &[vk::BufferMemoryBarrier],
+                &[to_draw],
+            );
+
+            let clear = vk::ClearValue {
+                color: vk::ClearColorValue {
+                    float32: [0.02, 0.02, 0.08, 1.0],
+                },
+            };
+
+            let attachment = vk::RenderingAttachmentInfo::builder()
+                .image_view(self.swapchain.image_views[i])
+                .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                .load_op(vk::AttachmentLoadOp::CLEAR)
+                .store_op(vk::AttachmentStoreOp::STORE)
+                .clear_value(clear);
+            let attachments = &[attachment];
+
+            let rendering = vk::RenderingInfo::builder()
+                .render_area(vk::Rect2D::builder().extent(self.swapchain.extent))
+                .layer_count(1)
+                .color_attachments(attachments);
+
+            self.device
+                .cmd_begin_rendering(self.command_buffer, &rendering);
+            self.device.cmd_end_rendering(self.command_buffer);
+
+            let to_present = vk::ImageMemoryBarrier::builder()
+                .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                .new_layout(vk::ImageLayout::PRESENT_SRC_KHR)
+                .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+                .dst_access_mask(vk::AccessFlags::empty())
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .image(self.swapchain.images[i])
+                .subresource_range(range);
+
+            self.device.cmd_pipeline_barrier(
+                self.command_buffer,
+                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+                vk::DependencyFlags::empty(),
+                &[] as &[vk::MemoryBarrier],
+                &[] as &[vk::BufferMemoryBarrier],
+                &[to_present],
+            );
+
+            self.device.end_command_buffer(self.command_buffer)?;
+        }
+
+        Ok(())
+    }
+}
+
 impl Drop for Renderer {
     fn drop(&mut self) {
         unsafe {
             self.device.device_wait_idle().unwrap();
             self.device.destroy_semaphore(self.image_available, None);
-            for &r_f in &self.render_finished { self.device.destroy_semaphore(r_f, None); }
+            for &r_f in &self.render_finished {
+                self.device.destroy_semaphore(r_f, None);
+            }
             self.device.destroy_fence(self.in_flight, None);
             self.device.destroy_command_pool(self.command_pool, None);
             for &img_view in &self.swapchain.image_views {
@@ -289,7 +387,10 @@ fn create_logical_device(
 
     let features = vk::PhysicalDeviceFeatures::builder();
 
+    let mut vulkan13 = vk::PhysicalDeviceVulkan13Features::builder().dynamic_rendering(true);
+
     let info = vk::DeviceCreateInfo::builder()
+        .push_next(&mut vulkan13)
         .queue_create_infos(queue_infos)
         .enabled_layer_names(&layers)
         .enabled_extension_names(&extensions)
