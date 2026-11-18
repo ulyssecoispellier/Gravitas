@@ -4,10 +4,10 @@ use winit::application::ApplicationHandler;
 use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{Key, NamedKey};
-use winit::window::{Window, WindowId};
+use winit::window::{self, Window, WindowId};
 
 use crate::physics::{Body, step_euler};
-use crate::renderer::Renderer;
+use crate::renderer::{self, Renderer};
 
 const ORBIT_SPEED: f64 = 0.5; // speed for a circular orbit
 const DT: f64 = 0.001; // size of one physics step, in seconds
@@ -29,6 +29,11 @@ impl ApplicationHandler for App {
 
         self.renderer = Some(Renderer::new(&window).unwrap());
         self.window = Some(window);
+
+        // Initiate graphics loop
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
     }
 
     fn window_event(
@@ -58,6 +63,10 @@ impl ApplicationHandler for App {
                 }
 
                 self.frame += 1;
+
+                if let Some(renderer) = &mut self.renderer {
+                    renderer.draw_frame().unwrap();
+                }
 
                 if let Some(window) = &self.window {
                     window.request_redraw();

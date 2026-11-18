@@ -108,6 +108,55 @@ impl Renderer {
 }
 
 impl Renderer {
+    pub fn draw_frame(&mut self) -> Result<()> {
+        unsafe {
+            self.device
+                .wait_for_fences(&[self.in_flight], true, u64::MAX)?;
+            self.device.reset_fences(&[self.in_flight])?;
+
+            let index = self
+                .device
+                .acquire_next_image_khr(
+                    self.swapchain.handle,
+                    u64::MAX,
+                    self.image_available,
+                    vk::Fence::null(),
+                )?
+                .0 as usize;
+
+            self.device
+                .reset_command_buffer(self.command_buffer, vk::CommandBufferResetFlags::empty())?;
+            self.record_commands(index)?;
+
+            let wait_semaphores = &[self.image_available];
+            let wait_stages = &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
+            let command_buffers = &[self.command_buffer];
+            let signal_semaphores = &[self.render_finished[index]];
+
+            let submit_info = vk::SubmitInfo::builder()
+                .wait_semaphores(wait_semaphores)
+                .wait_dst_stage_mask(wait_stages)
+                .command_buffers(command_buffers)
+                .signal_semaphores(signal_semaphores);
+
+            self.device
+                .queue_submit(self.graphics_queue, &[submit_info], self.in_flight)?;
+
+            let swapchains = &[self.swapchain.handle];
+            let image_indices = &[index as u32];
+
+            let present_info = vk::PresentInfoKHR::builder()
+                .wait_semaphores(signal_semaphores)
+                .swapchains(swapchains)
+                .image_indices(image_indices);
+
+            self.device
+                .queue_present_khr(self.graphics_queue, &present_info)?;
+        }
+
+        Ok(())
+    }
+
     fn record_commands(&self, i: usize) -> Result<()> {
         unsafe {
             self.device.begin_command_buffer(
@@ -142,7 +191,7 @@ impl Renderer {
 
             let clear = vk::ClearValue {
                 color: vk::ClearColorValue {
-                    float32: [0.02, 0.02, 0.08, 1.0],
+                    float32: [0.0, 0.0, 1.0, 0.5],
                 },
             };
 
