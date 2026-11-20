@@ -1,3 +1,0 @@
-cargo:rerun-if-changed=./shaders_uncompiled/
-cargo:warning=Compiled triangle.vert
-cargo:warning=Compiled triangle.frag
