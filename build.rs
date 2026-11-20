@@ -2,7 +2,7 @@ use std::process::Command;
 
 fn main() {
     println!("cargo:rerun-if-changed=./shaders_uncompiled/");
-    
+
     for entry in std::fs::read_dir("shaders_uncompiled").unwrap() {
         let path = entry.unwrap().path();
 
