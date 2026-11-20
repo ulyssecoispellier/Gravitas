@@ -209,7 +209,7 @@ impl Renderer {
 
             let clear = vk::ClearValue {
                 color: vk::ClearColorValue {
-                    float32: [0.0, 1.0, 0.0, 1.0],
+                    float32: [0.0, 0.0, 0.0, 1.0],
                 },
             };
 
@@ -246,7 +246,7 @@ impl Renderer {
                 0,
                 &[vk::Rect2D::builder().extent(self.swapchain.extent)],
             );
-            self.device.cmd_draw(self.command_buffer, 3, 1, 0, 0);
+            self.device.cmd_draw(self.command_buffer, 6, 1, 0, 0);
             self.device.cmd_end_rendering(self.command_buffer);
 
             let to_present = vk::ImageMemoryBarrier::builder()
