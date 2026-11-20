@@ -39,19 +39,19 @@ impl Vertex {
 
 pub const SQUARE: [Vertex; 4] = [
     Vertex {
-        pos: [-0.5, -0.5],
+        pos: [-0.05, -0.05],
         colour: [0.0, 1.0, 0.0],
     },
     Vertex {
-        pos: [0.5, -0.5],
+        pos: [0.05, -0.05],
         colour: [0.0, 0.0, 1.0],
     },
     Vertex {
-        pos: [0.5, 0.5],
+        pos: [0.05, 0.05],
         colour: [1.0, 0.0, 0.0],
     },
     Vertex {
-        pos: [-0.5, 0.5],
+        pos: [-0.05, 0.05],
         colour: [0.0, 1.0, 0.0],
     },
 ];

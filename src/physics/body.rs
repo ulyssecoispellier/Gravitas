@@ -4,24 +4,24 @@ pub struct Body {
     pub(super) pos: DVec3,
     pub(super) vel: DVec3,
     pub(super) mass: f64,
-    pub(super) _radius: f64,
+    pub(super) radius: f64,
 }
 
 impl Body {
-    pub fn new(pos: DVec3, vel: DVec3, mass: f64, _radius: f64) -> Self {
+    pub fn new(pos: DVec3, vel: DVec3, mass: f64, radius: f64) -> Self {
         Body {
             pos,
             vel,
             mass,
-            _radius,
+            radius,
         }
     }
 
-    pub fn _pos(&self) -> DVec3 {
+    pub fn pos(&self) -> DVec3 {
         self.pos
     }
 
-    pub fn _radius(&self) -> f64 {
-        self._radius
+    pub fn radius(&self) -> f64 {
+        self.radius
     }
 }

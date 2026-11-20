@@ -19,7 +19,6 @@ pub struct App {
     frame: u64,
     last_frame: Instant,
     accumulator: f64,
-    start: Instant,
 }
 
 impl ApplicationHandler for App {
@@ -65,9 +64,17 @@ impl ApplicationHandler for App {
 
                 self.frame += 1;
 
-                let t = self.start.elapsed().as_secs_f32();
+                let offsets: Vec<[f32; 2]> = self
+                    .bodies
+                    .iter()
+                    .map(|b| {
+                        let p = b.pos();
+                        [((p.x - 1.0) * 0.4) as f32, (p.y * 0.4) as f32]
+                    })
+                    .collect();
+
                 if let Some(renderer) = &mut self.renderer {
-                    renderer.draw_frame([t.sin() * 0.5, 0.0]).unwrap();
+                    renderer.draw_frame(&offsets).unwrap();
                 }
 
                 if let Some(window) = &self.window {
@@ -101,7 +108,6 @@ impl App {
             last_frame: Instant::now(),
             accumulator: 0.0,
             renderer: None,
-            start: Instant::now(),
         }
     }
 }
