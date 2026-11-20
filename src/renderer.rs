@@ -12,7 +12,7 @@ use vulkanalia::vk::{
 use vulkanalia::window as vk_window;
 use winit::window::Window;
 
-use crate::mesh::{SQUARE, Vertex};
+use crate::mesh::{SQUARE, SQUARE_INDICES, Vertex};
 
 const PORTABILITY_MACOS_VERSION: Version = Version::new(1, 3, 216);
 const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
@@ -38,6 +38,8 @@ pub struct Renderer {
     pipeline: vk::Pipeline,
     vertex_buffer: vk::Buffer,
     vertex_memory: vk::DeviceMemory,
+    index_buffer: vk::Buffer,
+    index_memory: vk::DeviceMemory,
 }
 
 impl Renderer {
@@ -94,8 +96,21 @@ impl Renderer {
         let (pipeline_layout, pipeline) =
             create_pipeline(&device, swapchain.format, vert_module, frag_module)?;
 
-        let (vertex_buffer, vertex_memory) =
-            create_buffer(&instance, &device, physical_device, vk::BufferUsageFlags::VERTEX_BUFFER, &SQUARE)?;
+        let (vertex_buffer, vertex_memory) = create_buffer(
+            &instance,
+            &device,
+            physical_device,
+            vk::BufferUsageFlags::VERTEX_BUFFER,
+            &SQUARE,
+        )?;
+
+        let (index_buffer, index_memory) = create_buffer(
+            &instance,
+            &device,
+            physical_device,
+            vk::BufferUsageFlags::INDEX_BUFFER,
+            &SQUARE_INDICES,
+        )?;
 
         for module in [vert_module, frag_module] {
             unsafe {
@@ -130,6 +145,8 @@ impl Renderer {
             pipeline,
             vertex_buffer,
             vertex_memory,
+            index_buffer,
+            index_memory,
         })
     }
 }
@@ -248,6 +265,12 @@ impl Renderer {
                 &[self.vertex_buffer],
                 &[0],
             );
+            self.device.cmd_bind_index_buffer(
+                self.command_buffer,
+                self.index_buffer,
+                0,
+                vk::IndexType::UINT16,
+            );
             self.device.cmd_set_viewport(
                 self.command_buffer,
                 0,
@@ -261,8 +284,14 @@ impl Renderer {
                 0,
                 &[vk::Rect2D::builder().extent(self.swapchain.extent)],
             );
-            self.device
-                .cmd_draw(self.command_buffer, SQUARE.len() as u32, 1, 0, 0);
+            self.device.cmd_draw_indexed(
+                self.command_buffer,
+                SQUARE_INDICES.len() as u32,
+                1,
+                0,
+                0,
+                0,
+            );
             self.device.cmd_end_rendering(self.command_buffer);
 
             let to_present = vk::ImageMemoryBarrier::builder()
@@ -302,6 +331,8 @@ impl Drop for Renderer {
             }
             self.device.destroy_fence(self.in_flight, None);
             self.device.destroy_command_pool(self.command_pool, None);
+            self.device.destroy_buffer(self.index_buffer, None);
+            self.device.free_memory(self.index_memory, None);
             self.device.destroy_buffer(self.vertex_buffer, None);
             self.device.free_memory(self.vertex_memory, None);
             self.device
