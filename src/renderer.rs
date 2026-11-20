@@ -95,7 +95,7 @@ impl Renderer {
             create_pipeline(&device, swapchain.format, vert_module, frag_module)?;
 
         let (vertex_buffer, vertex_memory) =
-            create_vertex_buffer(&instance, &device, physical_device, &SQUARE)?;
+            create_buffer(&instance, &device, physical_device, vk::BufferUsageFlags::VERTEX_BUFFER, &SQUARE)?;
 
         for module in [vert_module, frag_module] {
             unsafe {
@@ -703,17 +703,18 @@ fn create_pipeline(
     Ok((layout, pipeline))
 }
 
-fn create_vertex_buffer(
+fn create_buffer<T: Copy>(
     instance: &Instance,
     device: &Device,
     physical_device: vk::PhysicalDevice,
-    vertices: &[Vertex],
+    usage: vk::BufferUsageFlags,
+    data: &[T],
 ) -> Result<(vk::Buffer, vk::DeviceMemory)> {
-    let size = (std::mem::size_of::<Vertex>() * vertices.len()) as u64;
+    let size = (std::mem::size_of::<T>() * data.len()) as u64;
 
     let buffer_info = vk::BufferCreateInfo::builder()
         .size(size)
-        .usage(vk::BufferUsageFlags::VERTEX_BUFFER)
+        .usage(usage)
         .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
     let buffer = unsafe { device.create_buffer(&buffer_info, None)? };
@@ -744,7 +745,7 @@ fn create_vertex_buffer(
     unsafe {
         device.bind_buffer_memory(buffer, memory, 0)?;
         let ptr = device.map_memory(memory, 0, size, vk::MemoryMapFlags::empty())?;
-        std::ptr::copy_nonoverlapping(vertices.as_ptr(), ptr.cast(), vertices.len());
+        std::ptr::copy_nonoverlapping(data.as_ptr(), ptr.cast(), data.len());
         device.unmap_memory(memory);
     };
 
