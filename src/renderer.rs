@@ -152,7 +152,7 @@ impl Renderer {
 }
 
 impl Renderer {
-    pub fn draw_frame(&mut self, offset: [f32; 2]) -> Result<()> {
+    pub fn draw_frame(&mut self, offsets: &[[f32; 2]]) -> Result<()> {
         unsafe {
             self.device
                 .wait_for_fences(&[self.in_flight], true, u64::MAX)?;
@@ -170,7 +170,7 @@ impl Renderer {
 
             self.device
                 .reset_command_buffer(self.command_buffer, vk::CommandBufferResetFlags::empty())?;
-            self.record_commands(index, offset)?;
+            self.record_commands(index, offsets)?;
 
             let wait_semaphores = &[self.image_available];
             let wait_stages = &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
@@ -201,7 +201,7 @@ impl Renderer {
         Ok(())
     }
 
-    fn record_commands(&self, i: usize, offset: [f32; 2]) -> Result<()> {
+    fn record_commands(&self, i: usize, offsets: &[[f32; 2]]) -> Result<()> {
         unsafe {
             self.device.begin_command_buffer(
                 self.command_buffer,
@@ -259,13 +259,6 @@ impl Renderer {
                 vk::PipelineBindPoint::GRAPHICS,
                 self.pipeline,
             );
-            self.device.cmd_push_constants(
-                self.command_buffer,
-                self.pipeline_layout,
-                vk::ShaderStageFlags::VERTEX,
-                0,
-                bytemuck::bytes_of(&offset),
-            );
             self.device.cmd_bind_vertex_buffers(
                 self.command_buffer,
                 0,
@@ -291,14 +284,23 @@ impl Renderer {
                 0,
                 &[vk::Rect2D::builder().extent(self.swapchain.extent)],
             );
-            self.device.cmd_draw_indexed(
-                self.command_buffer,
-                SQUARE_INDICES.len() as u32,
-                1,
-                0,
-                0,
-                0,
-            );
+            for offset in offsets {
+                self.device.cmd_push_constants(
+                    self.command_buffer,
+                    self.pipeline_layout,
+                    vk::ShaderStageFlags::VERTEX,
+                    0,
+                    bytemuck::bytes_of(offset),
+                );
+                self.device.cmd_draw_indexed(
+                    self.command_buffer,
+                    SQUARE_INDICES.len() as u32,
+                    1,
+                    0,
+                    0,
+                    0,
+                );
+            }
             self.device.cmd_end_rendering(self.command_buffer);
 
             let to_present = vk::ImageMemoryBarrier::builder()
