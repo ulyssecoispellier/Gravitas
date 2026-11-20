@@ -152,7 +152,7 @@ impl Renderer {
 }
 
 impl Renderer {
-    pub fn draw_frame(&mut self) -> Result<()> {
+    pub fn draw_frame(&mut self, offset: [f32; 2]) -> Result<()> {
         unsafe {
             self.device
                 .wait_for_fences(&[self.in_flight], true, u64::MAX)?;
@@ -170,7 +170,7 @@ impl Renderer {
 
             self.device
                 .reset_command_buffer(self.command_buffer, vk::CommandBufferResetFlags::empty())?;
-            self.record_commands(index)?;
+            self.record_commands(index, offset)?;
 
             let wait_semaphores = &[self.image_available];
             let wait_stages = &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
@@ -201,7 +201,7 @@ impl Renderer {
         Ok(())
     }
 
-    fn record_commands(&self, i: usize) -> Result<()> {
+    fn record_commands(&self, i: usize, offset: [f32; 2]) -> Result<()> {
         unsafe {
             self.device.begin_command_buffer(
                 self.command_buffer,
@@ -258,6 +258,13 @@ impl Renderer {
                 self.command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
                 self.pipeline,
+            );
+            self.device.cmd_push_constants(
+                self.command_buffer,
+                self.pipeline_layout,
+                vk::ShaderStageFlags::VERTEX,
+                0,
+                bytemuck::bytes_of(&offset),
             );
             self.device.cmd_bind_vertex_buffers(
                 self.command_buffer,
@@ -708,9 +715,17 @@ fn create_pipeline(
     let mut rendering =
         vk::PipelineRenderingCreateInfo::builder().color_attachment_formats(formats);
 
-    // The (empty) layout: our shaders receive no data from the CPU
-    let layout =
-        unsafe { device.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::builder(), None)? };
+    let push = vk::PushConstantRange::builder()
+        .stage_flags(vk::ShaderStageFlags::VERTEX)
+        .offset(0)
+        .size(std::mem::size_of::<[f32; 2]>() as u32);
+
+    let layout = unsafe {
+        device.create_pipeline_layout(
+            &vk::PipelineLayoutCreateInfo::builder().push_constant_ranges(&[push]),
+            None,
+        )?
+    };
 
     // The big form: plug in every small form prepared above
     let pipeline_info = vk::GraphicsPipelineCreateInfo::builder()
