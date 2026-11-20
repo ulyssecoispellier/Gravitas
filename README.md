@@ -22,15 +22,15 @@ It is also a learning project: the goal is to understand Rust and Vulkan from th
 | Window surface + presentation support | ✅ Done |
 | Swapchain + image views | ✅ Done |
 | Command buffers + synchronization | ✅ Done |
-| Clear the window to a colour (first frame) | 🚧 Next |
-| First triangle | ⬜ Planned |
+| Clear the window to a colour (first frame) | ✅ Done |
+| First triangle (shaders + graphics pipeline) | 🚧 Next |
 | Rocky planet (mesh, textures, depth buffer) | ⬜ Planned |
 | Orbit camera (mouse) | ⬜ Planned |
 | Star + gas giant, ray-traced in shaders | ⬜ Planned |
 | Atmospheric scattering | ⬜ Planned |
 | Bloom + HDR post-processing | ⬜ Planned |
 
-Right now, running the program opens a window, runs the physics in real time, and sets up Vulkan: it connects Vulkan to the window (surface), lists the available GPUs, picks the best one that can draw and present to the window, opens a logical device on it, creates a swapchain (the images that will be shown in the window), and prepares a command buffer and the synchronization objects needed to draw a frame. Nothing is drawn yet.
+Right now, running the program opens a window, runs the physics in real time, and renders every frame with Vulkan: the window is cleared to a solid colour by the GPU. Under the hood, it sets up Vulkan: it connects Vulkan to the window (surface), lists the available GPUs, picks the best one that can draw and present to the window, opens a logical device on it, creates a swapchain (the images that will be shown in the window), and prepares a command buffer and the synchronization objects needed to draw a frame. Each frame, it waits for the previous one, takes a swapchain image, records the commands that clear it (dynamic rendering, Vulkan 1.3), submits them and presents the image.
 
 ---
 

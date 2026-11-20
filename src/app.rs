@@ -4,10 +4,10 @@ use winit::application::ApplicationHandler;
 use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{Key, NamedKey};
-use winit::window::{self, Window, WindowId};
+use winit::window::{Window, WindowId};
 
 use crate::physics::{Body, step_euler};
-use crate::renderer::{self, Renderer};
+use crate::renderer::Renderer;
 
 const ORBIT_SPEED: f64 = 0.5; // speed for a circular orbit
 const DT: f64 = 0.001; // size of one physics step, in seconds

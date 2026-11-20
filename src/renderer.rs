@@ -32,6 +32,9 @@ pub struct Renderer {
     image_available: vk::Semaphore,
     render_finished: Vec<vk::Semaphore>,
     in_flight: vk::Fence,
+    pipeline_layout: vk::PipelineLayout,
+    pipeline: vk::Pipeline,
+    
 }
 
 impl Renderer {
@@ -80,6 +83,14 @@ impl Renderer {
             )?
         };
 
+        let vert_module =
+            create_shader_module(&device, include_bytes!("../shaders/triangle.vert.spv"))?;
+        let frag_module =
+            create_shader_module(&device, include_bytes!("../shaders/triangle.frag.spv"))?;
+
+        let (pipeline_layout, pipeline) = create_pipeline(&device, swapchain.format, vert_module, frag_module)?;
+        
+
         println!(
             "Nb of img : {:?} | Width : {:?} | Height {:?} | Format : {:?}",
             swapchain.images.len(),
@@ -103,6 +114,8 @@ impl Renderer {
             image_available,
             render_finished,
             in_flight,
+            pipeline_layout,
+            pipeline,
         })
     }
 }
@@ -191,7 +204,7 @@ impl Renderer {
 
             let clear = vk::ClearValue {
                 color: vk::ClearColorValue {
-                    float32: [0.0, 1.0, 0.0, 0.5],
+                    float32: [0.0, 1.0, 0.0, 1.0],
                 },
             };
 
@@ -249,6 +262,8 @@ impl Drop for Renderer {
             }
             self.device.destroy_fence(self.in_flight, None);
             self.device.destroy_command_pool(self.command_pool, None);
+            self.device.destroy_pipeline_layout(self.pipeline_layout, None);
+            self.device.destroy_pipeline(self.pipeline, None);
             for &img_view in &self.swapchain.image_views {
                 self.device.destroy_image_view(img_view, None);
             }
@@ -554,4 +569,89 @@ fn create_swapchain(
         images,
         image_views,
     })
+}
+
+fn create_shader_module(device: &Device, bytes: &[u8]) -> Result<vk::ShaderModule> {
+    let bytecode = vulkanalia::bytecode::Bytecode::new(bytes)?;
+    let info = vk::ShaderModuleCreateInfo::builder()
+        .code_size(bytecode.code_size())
+        .code(bytecode.code());
+
+    Ok(unsafe { device.create_shader_module(&info, None)? })
+}
+
+fn create_pipeline(
+    device: &Device,
+    format: vk::Format,
+    vert: vk::ShaderModule,
+    frag: vk::ShaderModule,
+) -> Result<(vk::PipelineLayout, vk::Pipeline)> {
+    let stages = &[
+        vk::PipelineShaderStageCreateInfo::builder()
+            .stage(vk::ShaderStageFlags::VERTEX)
+            .module(vert)
+            .name(b"main\0"),
+        vk::PipelineShaderStageCreateInfo::builder()
+            .stage(vk::ShaderStageFlags::FRAGMENT)
+            .module(frag)
+            .name(b"main\0"),
+    ];
+
+    let vertex_input = vk::PipelineVertexInputStateCreateInfo::builder();
+
+    let input_assembly = vk::PipelineInputAssemblyStateCreateInfo::builder()
+        .topology(vk::PrimitiveTopology::TRIANGLE_LIST);
+
+    let viewport_state = vk::PipelineViewportStateCreateInfo::builder()
+        .viewport_count(1)
+        .scissor_count(1);
+
+    // Filled triangles, draw both faces
+    let rasterization = vk::PipelineRasterizationStateCreateInfo::builder()
+        .polygon_mode(vk::PolygonMode::FILL)
+        .line_width(1.0)
+        .cull_mode(vk::CullModeFlags::NONE)
+        .front_face(vk::FrontFace::CLOCKWISE);
+
+    let multisample = vk::PipelineMultisampleStateCreateInfo::builder()
+        .rasterization_samples(vk::SampleCountFlags::_1);
+
+    let blend_attachment = vk::PipelineColorBlendAttachmentState::builder()
+        .color_write_mask(vk::ColorComponentFlags::all())
+        .blend_enable(false);
+    let blend_attachments = &[blend_attachment];
+    let color_blend =
+        vk::PipelineColorBlendStateCreateInfo::builder().attachments(blend_attachments);
+
+    let dynamic_states = &[vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
+    let dynamic = vk::PipelineDynamicStateCreateInfo::builder().dynamic_states(dynamic_states);
+
+    let formats = &[format];
+    let mut rendering =
+        vk::PipelineRenderingCreateInfo::builder().color_attachment_formats(formats);
+
+    // The (empty) layout: our shaders receive no data from the CPU
+    let layout =
+        unsafe { device.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::builder(), None)? };
+
+    // The big form: plug in every small form prepared above
+    let pipeline_info = vk::GraphicsPipelineCreateInfo::builder()
+        .push_next(&mut rendering)
+        .stages(stages)
+        .vertex_input_state(&vertex_input)
+        .input_assembly_state(&input_assembly)
+        .viewport_state(&viewport_state)
+        .rasterization_state(&rasterization)
+        .multisample_state(&multisample)
+        .color_blend_state(&color_blend)
+        .dynamic_state(&dynamic)
+        .layout(layout);
+
+    // Create it (the function can make several pipelines, so it takes a list and returns a list)
+    let pipeline = unsafe {
+        device.create_graphics_pipelines(vk::PipelineCache::null(), &[pipeline_info], None)?
+    }
+    .0[0];
+
+    Ok((layout, pipeline))
 }
