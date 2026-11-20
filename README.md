@@ -24,15 +24,16 @@ It is also a learning project: the goal is to understand Rust and Vulkan from th
 | Command buffers + synchronization | ✅ Done |
 | Clear the window to a colour (first frame) | ✅ Done |
 | First triangle (shaders + graphics pipeline) | ✅ Done |
-| Automatic shader compilation (`build.rs`) | 🚧 Next |
-| Vertex buffers (geometry sent from Rust) | ⬜ Planned |
+| Automatic shader compilation (`build.rs`) | ✅ Done |
+| Vertex buffers (geometry sent from Rust) | ✅ Done |
+| Index buffers + generic buffer helper | 🚧 Next |
 | Rocky planet (mesh, textures, depth buffer) | ⬜ Planned |
 | Orbit camera (mouse) | ⬜ Planned |
 | Star + gas giant, ray-traced in shaders | ⬜ Planned |
 | Atmospheric scattering | ⬜ Planned |
 | Bloom + HDR post-processing | ⬜ Planned |
 
-Right now, running the program opens a window, runs the physics in real time, and renders every frame with Vulkan: the window is cleared to a solid colour and a colour-blended triangle is drawn by the GPU, using a vertex shader and a fragment shader. Under the hood, it sets up Vulkan: it connects Vulkan to the window (surface), lists the available GPUs, picks the best one that can draw and present to the window, opens a logical device on it, creates a swapchain (the images that will be shown in the window), and prepares a command buffer and the synchronization objects needed to draw a frame. Each frame, it waits for the previous one, takes a swapchain image, records the commands that clear it (dynamic rendering, Vulkan 1.3), submits them and presents the image.
+Right now, running the program opens a window, runs the physics in real time, and renders every frame with Vulkan: the window is cleared to a solid colour and a colour-blended square, whose vertices come from Rust through a vertex buffer, is drawn by the GPU, using a vertex shader and a fragment shader. Under the hood, it sets up Vulkan: it connects Vulkan to the window (surface), lists the available GPUs, picks the best one that can draw and present to the window, opens a logical device on it, creates a swapchain (the images that will be shown in the window), and prepares a command buffer and the synchronization objects needed to draw a frame. Each frame, it waits for the previous one, takes a swapchain image, records the commands that clear it (dynamic rendering, Vulkan 1.3), submits them and presents the image.
 
 ---
 
@@ -57,7 +58,8 @@ A hybrid renderer:
 src/
 ├── main.rs              # entry point: creates the event loop and runs the app
 ├── app.rs               # window, input, game loop, fixed timestep
-├── renderer.rs          # Vulkan: setup, swapchain, pipeline, per-frame drawing
+├── renderer.rs          # Vulkan: setup, swapchain, pipeline, buffers, per-frame drawing
+├── mesh.rs              # Vertex type, its GPU layout, and mesh data
 ├── physics.rs           # physics module (re-exports)
 └── physics/
     ├── body.rs          # Body: position, velocity, mass, radius
@@ -93,13 +95,8 @@ vulkaninfo --summary
 
 The project's `.cargo/config.toml` tells the program where Homebrew installed Vulkan, so no extra setup is needed.
 
-### Compile the shaders
-Vulkan only reads SPIR-V, so the GLSL shaders must be compiled with `glslc` (from the `shaderc` package) after each change:
-
-```bash
-glslc shaders_uncompiled/triangle.vert -o shaders/triangle.vert.spv
-glslc shaders_uncompiled/triangle.frag -o shaders/triangle.frag.spv
-```
+### Shaders
+Vulkan only reads SPIR-V. `build.rs` compiles every shader in `shaders_uncompiled/` with `glslc` (from the `shaderc` package) automatically, whenever a shader changes. Nothing to do by hand.
 
 ### Run
 
