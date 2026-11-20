@@ -34,7 +34,6 @@ pub struct Renderer {
     in_flight: vk::Fence,
     pipeline_layout: vk::PipelineLayout,
     pipeline: vk::Pipeline,
-    
 }
 
 impl Renderer {
@@ -88,8 +87,14 @@ impl Renderer {
         let frag_module =
             create_shader_module(&device, include_bytes!("../shaders/triangle.frag.spv"))?;
 
-        let (pipeline_layout, pipeline) = create_pipeline(&device, swapchain.format, vert_module, frag_module)?;
-        
+        let (pipeline_layout, pipeline) =
+            create_pipeline(&device, swapchain.format, vert_module, frag_module)?;
+
+        for module in [vert_module, frag_module] {
+            unsafe {
+                device.destroy_shader_module(module, None);
+            }
+        }
 
         println!(
             "Nb of img : {:?} | Width : {:?} | Height {:?} | Format : {:?}",
@@ -223,6 +228,25 @@ impl Renderer {
 
             self.device
                 .cmd_begin_rendering(self.command_buffer, &rendering);
+            self.device.cmd_bind_pipeline(
+                self.command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.pipeline,
+            );
+            self.device.cmd_set_viewport(
+                self.command_buffer,
+                0,
+                &[vk::Viewport::builder()
+                    .width(self.swapchain.extent.width as f32)
+                    .height(self.swapchain.extent.height as f32)
+                    .max_depth(1.0)],
+            );
+            self.device.cmd_set_scissor(
+                self.command_buffer,
+                0,
+                &[vk::Rect2D::builder().extent(self.swapchain.extent)],
+            );
+            self.device.cmd_draw(self.command_buffer, 3, 1, 0, 0);
             self.device.cmd_end_rendering(self.command_buffer);
 
             let to_present = vk::ImageMemoryBarrier::builder()
@@ -262,7 +286,8 @@ impl Drop for Renderer {
             }
             self.device.destroy_fence(self.in_flight, None);
             self.device.destroy_command_pool(self.command_pool, None);
-            self.device.destroy_pipeline_layout(self.pipeline_layout, None);
+            self.device
+                .destroy_pipeline_layout(self.pipeline_layout, None);
             self.device.destroy_pipeline(self.pipeline, None);
             for &img_view in &self.swapchain.image_views {
                 self.device.destroy_image_view(img_view, None);
