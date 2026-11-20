@@ -12,6 +12,8 @@ use vulkanalia::vk::{
 use vulkanalia::window as vk_window;
 use winit::window::Window;
 
+use crate::mesh::{SQUARE, Vertex};
+
 const PORTABILITY_MACOS_VERSION: Version = Version::new(1, 3, 216);
 const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
 const VALIDATION_LAYER: vk::ExtensionName =
@@ -34,6 +36,8 @@ pub struct Renderer {
     in_flight: vk::Fence,
     pipeline_layout: vk::PipelineLayout,
     pipeline: vk::Pipeline,
+    vertex_buffer: vk::Buffer,
+    vertex_memory: vk::DeviceMemory,
 }
 
 impl Renderer {
@@ -90,6 +94,9 @@ impl Renderer {
         let (pipeline_layout, pipeline) =
             create_pipeline(&device, swapchain.format, vert_module, frag_module)?;
 
+        let (vertex_buffer, vertex_memory) =
+            create_vertex_buffer(&instance, &device, physical_device, &SQUARE)?;
+
         for module in [vert_module, frag_module] {
             unsafe {
                 device.destroy_shader_module(module, None);
@@ -121,6 +128,8 @@ impl Renderer {
             in_flight,
             pipeline_layout,
             pipeline,
+            vertex_buffer,
+            vertex_memory,
         })
     }
 }
@@ -233,6 +242,12 @@ impl Renderer {
                 vk::PipelineBindPoint::GRAPHICS,
                 self.pipeline,
             );
+            self.device.cmd_bind_vertex_buffers(
+                self.command_buffer,
+                0,
+                &[self.vertex_buffer],
+                &[0],
+            );
             self.device.cmd_set_viewport(
                 self.command_buffer,
                 0,
@@ -246,7 +261,8 @@ impl Renderer {
                 0,
                 &[vk::Rect2D::builder().extent(self.swapchain.extent)],
             );
-            self.device.cmd_draw(self.command_buffer, 6, 1, 0, 0);
+            self.device
+                .cmd_draw(self.command_buffer, SQUARE.len() as u32, 1, 0, 0);
             self.device.cmd_end_rendering(self.command_buffer);
 
             let to_present = vk::ImageMemoryBarrier::builder()
@@ -286,6 +302,8 @@ impl Drop for Renderer {
             }
             self.device.destroy_fence(self.in_flight, None);
             self.device.destroy_command_pool(self.command_pool, None);
+            self.device.destroy_buffer(self.vertex_buffer, None);
+            self.device.free_memory(self.vertex_memory, None);
             self.device
                 .destroy_pipeline_layout(self.pipeline_layout, None);
             self.device.destroy_pipeline(self.pipeline, None);
@@ -622,7 +640,11 @@ fn create_pipeline(
             .name(b"main\0"),
     ];
 
-    let vertex_input = vk::PipelineVertexInputStateCreateInfo::builder();
+    let bindings = &[Vertex::binding_description()];
+    let attributes = Vertex::attribute_descriptions();
+    let vertex_input = vk::PipelineVertexInputStateCreateInfo::builder()
+        .vertex_binding_descriptions(bindings)
+        .vertex_attribute_descriptions(&attributes);
 
     let input_assembly = vk::PipelineInputAssemblyStateCreateInfo::builder()
         .topology(vk::PrimitiveTopology::TRIANGLE_LIST);
@@ -679,4 +701,52 @@ fn create_pipeline(
     .0[0];
 
     Ok((layout, pipeline))
+}
+
+fn create_vertex_buffer(
+    instance: &Instance,
+    device: &Device,
+    physical_device: vk::PhysicalDevice,
+    vertices: &[Vertex],
+) -> Result<(vk::Buffer, vk::DeviceMemory)> {
+    let size = (std::mem::size_of::<Vertex>() * vertices.len()) as u64;
+
+    let buffer_info = vk::BufferCreateInfo::builder()
+        .size(size)
+        .usage(vk::BufferUsageFlags::VERTEX_BUFFER)
+        .sharing_mode(vk::SharingMode::EXCLUSIVE);
+
+    let buffer = unsafe { device.create_buffer(&buffer_info, None)? };
+
+    let requirements = unsafe { device.get_buffer_memory_requirements(buffer) };
+
+    let memory_properties =
+        unsafe { instance.get_physical_device_memory_properties(physical_device) };
+
+    let wanted = vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT;
+
+    let memory_type_index = (0..memory_properties.memory_type_count)
+        .find(|&i| {
+            let allowed = (requirements.memory_type_bits & (1 << i)) != 0;
+            let has_flags = memory_properties.memory_types[i as usize]
+                .property_flags
+                .contains(wanted);
+            allowed && has_flags
+        })
+        .ok_or_else(|| anyhow!("no suitable memory type"))?;
+
+    let info = vk::MemoryAllocateInfo::builder()
+        .allocation_size(requirements.size)
+        .memory_type_index(memory_type_index);
+
+    let memory = unsafe { device.allocate_memory(&info, None)? };
+
+    unsafe {
+        device.bind_buffer_memory(buffer, memory, 0)?;
+        let ptr = device.map_memory(memory, 0, size, vk::MemoryMapFlags::empty())?;
+        std::ptr::copy_nonoverlapping(vertices.as_ptr(), ptr.cast(), vertices.len());
+        device.unmap_memory(memory);
+    };
+
+    Ok((buffer, memory))
 }
