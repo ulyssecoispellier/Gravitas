@@ -37,7 +37,7 @@ impl Vertex {
     }
 }
 
-pub const SQUARE: [Vertex; 6] = [
+pub const SQUARE: [Vertex; 4] = [
     Vertex {
         pos: [-0.5, -0.5],
         colour: [0.0, 1.0, 0.0],
@@ -51,15 +51,9 @@ pub const SQUARE: [Vertex; 6] = [
         colour: [1.0, 0.0, 0.0],
     },
     Vertex {
-        pos: [-0.5, -0.5],
+        pos: [-0.5, 0.5],
         colour: [0.0, 1.0, 0.0],
     },
-    Vertex {
-        pos: [0.5, 0.5],
-        colour: [1.0, 0.0, 0.0],
-    },
-    Vertex {
-        pos: [-0.5, 0.5],
-        colour: [0.0, 0.0, 1.0],
-    },
 ];
+
+pub const SQUARE_INDICES: [u16; 6] = [0, 1, 2, 0, 2, 3];
