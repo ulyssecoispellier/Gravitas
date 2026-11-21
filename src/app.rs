@@ -66,24 +66,21 @@ impl ApplicationHandler for App {
 
                 if let Some(renderer) = &mut self.renderer {
                     let aspect = renderer.aspect();
-                    let h = 2.0;
 
-                    // How the world fits on screen (no stretching)
-                    let projection = glam::camera::rh::proj::vulkan::orthographic(
-                        -h * aspect,
-                        h * aspect,
-                        -h,
-                        h,
-                        -1.0,
-                        1.0,
+                    // Perspective: far things look smaller (45° vertical field of view)
+                    let projection = glam::camera::rh::proj::vulkan::perspective(
+                        45f32.to_radians(),
+                        aspect,
+                        0.1,
+                        100.0,
                     );
 
-                    // The camera: move the world so the orbit's centre (1, 0) is in the middle
-                    let view = Mat4::from_translation(Vec3 {
-                        x: -1.0,
-                        y: 0.0,
-                        z: 0.0,
-                    });
+                    // Camera at (1, -4, 3), looking at the orbit's centre, with z pointing up
+                    let view = glam::camera::rh::view::look_at_mat4(
+                        Vec3::new(1.0, -4.0, 3.0),
+                        Vec3::new(1.0, 0.0, 0.0),
+                        Vec3::Z,
+                    );
 
                     let transforms: Vec<Mat4> = self
                         .bodies
