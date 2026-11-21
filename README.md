@@ -29,14 +29,15 @@ It is also a learning project: the goal is to understand Rust and Vulkan from th
 | Index buffers + generic buffer helper | ✅ Done |
 | Push constants: send per-frame data to shaders | ✅ Done |
 | Show the orbiting bodies on screen | ✅ Done |
-| Aspect ratio + 3D camera (matrices) | 🚧 Next |
+| Transform matrices + orthographic camera (correct aspect ratio) | ✅ Done |
+| 3D perspective camera | 🚧 Next |
 | Rocky planet (mesh, textures, depth buffer) | ⬜ Planned |
 | Orbit camera (mouse) | ⬜ Planned |
 | Star + gas giant, ray-traced in shaders | ⬜ Planned |
 | Atmospheric scattering | ⬜ Planned |
 | Bloom + HDR post-processing | ⬜ Planned |
 
-Right now, running the program opens a window, runs the physics in real time, and shows the two bodies orbiting each other as small squares (one draw call per body, positioned with push constants). It renders every frame with Vulkan: the window is cleared to a solid colour and a colour-blended square, whose 4 vertices and 6 indices come from Rust through vertex and index buffers, is drawn by the GPU and moved every frame with push constants, using a vertex shader and a fragment shader. Under the hood, it sets up Vulkan: it connects Vulkan to the window (surface), lists the available GPUs, picks the best one that can draw and present to the window, opens a logical device on it, creates a swapchain (the images that will be shown in the window), and prepares a command buffer and the synchronization objects needed to draw a frame. Each frame, it waits for the previous one, takes a swapchain image, records the commands that clear it (dynamic rendering, Vulkan 1.3), submits them and presents the image.
+Right now, running the program opens a window, runs the physics in real time, and shows the two bodies orbiting each other as small squares (one draw call per body; each body's model × view × projection matrix is sent with push constants, so the orbit keeps its true shape whatever the window size). It renders every frame with Vulkan: the window is cleared to a solid colour and a colour-blended square, whose 4 vertices and 6 indices come from Rust through vertex and index buffers, is drawn by the GPU and moved every frame with push constants, using a vertex shader and a fragment shader. Under the hood, it sets up Vulkan: it connects Vulkan to the window (surface), lists the available GPUs, picks the best one that can draw and present to the window, opens a logical device on it, creates a swapchain (the images that will be shown in the window), and prepares a command buffer and the synchronization objects needed to draw a frame. Each frame, it waits for the previous one, takes a swapchain image, records the commands that clear it (dynamic rendering, Vulkan 1.3), submits them and presents the image.
 
 ---
 

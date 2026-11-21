@@ -1,4 +1,4 @@
-use glam::DVec3;
+use glam::{DVec3, Mat4, Vec3};
 use std::time::Instant;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, WindowEvent};
@@ -64,17 +64,44 @@ impl ApplicationHandler for App {
 
                 self.frame += 1;
 
-                let offsets: Vec<[f32; 2]> = self
-                    .bodies
-                    .iter()
-                    .map(|b| {
-                        let p = b.pos();
-                        [((p.x - 1.0) * 0.4) as f32, (p.y * 0.4) as f32]
-                    })
-                    .collect();
-
                 if let Some(renderer) = &mut self.renderer {
-                    renderer.draw_frame(&offsets).unwrap();
+                    let aspect = renderer.aspect();
+                    let h = 2.0;
+
+                    // How the world fits on screen (no stretching)
+                    let projection = glam::camera::rh::proj::vulkan::orthographic(
+                        -h * aspect,
+                        h * aspect,
+                        -h,
+                        h,
+                        -1.0,
+                        1.0,
+                    );
+
+                    // The camera: move the world so the orbit's centre (1, 0) is in the middle
+                    let view = Mat4::from_translation(Vec3 {
+                        x: -1.0,
+                        y: 0.0,
+                        z: 0.0,
+                    });
+
+                    let transforms: Vec<Mat4> = self
+                        .bodies
+                        .iter()
+                        .map(|body| {
+                            let pos = body.pos();
+                            // Where this body is in the world
+                            let model = Mat4::from_translation(Vec3 {
+                                x: pos.x as f32,
+                                y: pos.y as f32,
+                                z: pos.z as f32,
+                            });
+
+                            projection * view * model
+                        })
+                        .collect();
+
+                    renderer.draw_frame(&transforms).unwrap();
                 }
 
                 if let Some(window) = &self.window {
