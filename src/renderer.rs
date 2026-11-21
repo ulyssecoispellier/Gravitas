@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use anyhow::{Ok, Result, anyhow};
+use glam::Mat4;
 use std::ffi::{CStr, c_void};
 use vulkanalia::Version;
 use vulkanalia::loader::{LIBRARY, LibloadingLoader};
@@ -152,7 +153,7 @@ impl Renderer {
 }
 
 impl Renderer {
-    pub fn draw_frame(&mut self, offsets: &[[f32; 2]]) -> Result<()> {
+    pub fn draw_frame(&mut self, transforms: &[Mat4]) -> Result<()> {
         unsafe {
             self.device
                 .wait_for_fences(&[self.in_flight], true, u64::MAX)?;
@@ -170,7 +171,7 @@ impl Renderer {
 
             self.device
                 .reset_command_buffer(self.command_buffer, vk::CommandBufferResetFlags::empty())?;
-            self.record_commands(index, offsets)?;
+            self.record_commands(index, transforms)?;
 
             let wait_semaphores = &[self.image_available];
             let wait_stages = &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
@@ -201,7 +202,7 @@ impl Renderer {
         Ok(())
     }
 
-    fn record_commands(&self, i: usize, offsets: &[[f32; 2]]) -> Result<()> {
+    fn record_commands(&self, i: usize, transforms: &[Mat4]) -> Result<()> {
         unsafe {
             self.device.begin_command_buffer(
                 self.command_buffer,
@@ -284,13 +285,13 @@ impl Renderer {
                 0,
                 &[vk::Rect2D::builder().extent(self.swapchain.extent)],
             );
-            for offset in offsets {
+            for transform in transforms {
                 self.device.cmd_push_constants(
                     self.command_buffer,
                     self.pipeline_layout,
                     vk::ShaderStageFlags::VERTEX,
                     0,
-                    bytemuck::bytes_of(offset),
+                    bytemuck::bytes_of(&transform.to_cols_array()),
                 );
                 self.device.cmd_draw_indexed(
                     self.command_buffer,
@@ -327,6 +328,10 @@ impl Renderer {
         }
 
         Ok(())
+    }
+
+    pub fn aspect(&self) -> f32 {
+        self.swapchain.extent.width as f32 / self.swapchain.extent.height as f32
     }
 }
 
@@ -720,7 +725,7 @@ fn create_pipeline(
     let push = vk::PushConstantRange::builder()
         .stage_flags(vk::ShaderStageFlags::VERTEX)
         .offset(0)
-        .size(std::mem::size_of::<[f32; 2]>() as u32);
+        .size(std::mem::size_of::<[f32; 16]>() as u32);
 
     let layout = unsafe {
         device.create_pipeline_layout(
