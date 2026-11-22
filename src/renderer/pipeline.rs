@@ -25,6 +25,7 @@ pub(super) fn create_pipeline(
     format: vk::Format,
     vert: vk::ShaderModule,
     frag: vk::ShaderModule,
+    set_layout: vk::DescriptorSetLayout,
 ) -> Result<(vk::PipelineLayout, vk::Pipeline)> {
     // The 2 shaders, both starting at their `main` function
     let stages = &[
@@ -97,7 +98,10 @@ pub(super) fn create_pipeline(
 
     let layout = unsafe {
         device.create_pipeline_layout(
-            &vk::PipelineLayoutCreateInfo::builder().push_constant_ranges(&[push]),
+            &vk::PipelineLayoutCreateInfo::builder()
+                // Set 0: texture
+                .set_layouts(&[set_layout])
+                .push_constant_ranges(&[push]),
             None,
         )?
     };

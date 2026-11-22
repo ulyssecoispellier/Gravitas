@@ -29,7 +29,7 @@ mod swapchain;
 use device::{create_logical_device, pick_physical_device};
 use instance::{create_instance, create_messenger};
 use pipeline::{create_pipeline, create_shader_module};
-use resources::{create_buffer, create_image};
+use resources::{copy_buffer_to_image, create_buffer, create_image};
 use swapchain::{Swapchain, create_swapchain};
 
 /// From this Vulkan version on, macOS needs the "portability" extensions to see MoltenVK / KosmicKrisp
@@ -109,6 +109,14 @@ pub struct Renderer {
     texture_memory: vk::DeviceMemory,
     /// How shaders see `texture_image`
     texture_view: vk::ImageView,
+    /// Sampler for `texture_view`
+    sampler: vk::Sampler,
+    /// Layout of set 0: binding 0 = texture + sampler
+    descriptor_set_layout: vk::DescriptorSetLayout,
+    /// Pool for `descriptor_set`
+    descriptor_pool: vk::DescriptorPool,
+    /// Set 0: the rocky planet texture
+    descriptor_set: vk::DescriptorSet,
 }
 
 impl Renderer {
@@ -175,15 +183,33 @@ impl Renderer {
         let frag_module =
             create_shader_module(&device, include_bytes!("../shaders/triangle.frag.spv"))?;
 
-        let (pipeline_layout, pipeline) =
-            create_pipeline(&device, swapchain.format, vert_module, frag_module)?;
+        // Descriptor set layout: binding 0 = texture + sampler, fragment shader
+        let sampler_binding = vk::DescriptorSetLayoutBinding::builder()
+            .binding(0)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT);
+        let descriptor_set_layout = unsafe {
+            device.create_descriptor_set_layout(
+                &vk::DescriptorSetLayoutCreateInfo::builder().bindings(&[sampler_binding]),
+                None,
+            )?
+        };
 
-        // 7. The rocky planet texture: load the file, as 4 bytes per pixel (R, G, B, A)
+        let (pipeline_layout, pipeline) = create_pipeline(
+            &device,
+            swapchain.format,
+            vert_module,
+            frag_module,
+            descriptor_set_layout,
+        )?;
+
+        // 7. Rocky planet texture: load as RGBA8
         let img = image::open("textures/rocky.png")?.to_rgba8();
         let (tex_width, tex_height) = img.dimensions();
         let pixels = img.into_raw();
 
-        // An empty GPU image the size of the texture: we can copy into it (TRANSFER_DST), shaders can read it (SAMPLED)
+        // Texture image (copy destination, sampled by shaders)
         let (texture_image, texture_memory, texture_view) = create_image(
             &instance,
             &device,
@@ -197,13 +223,74 @@ impl Renderer {
             vk::ImageAspectFlags::COLOR,
         )?;
 
+        // Staging buffer (CPU-writable copy source)
         let (staging_buffer, staging_memory) = create_buffer(
             &instance,
             &device,
             physical_device,
-            vk::BufferUsageFlags::TRANSFER_SRC, // "the GPU will copy FROM this buffer"
+            vk::BufferUsageFlags::TRANSFER_SRC,
             &pixels,
         )?;
+
+        // Upload: staging buffer → texture image
+        copy_buffer_to_image(
+            &device,
+            graphics_queue,
+            command_pool,
+            staging_buffer,
+            texture_image,
+            tex_width,
+            tex_height,
+        )?;
+
+        // Staging buffer no longer needed
+        unsafe {
+            device.destroy_buffer(staging_buffer, None);
+            device.free_memory(staging_memory, None);
+        }
+
+        // Sampler: linear filtering, u wraps around the sphere, v clamped at the poles
+        let sampler_info = vk::SamplerCreateInfo::builder()
+            .mag_filter(vk::Filter::LINEAR)
+            .min_filter(vk::Filter::LINEAR)
+            .address_mode_u(vk::SamplerAddressMode::REPEAT)
+            .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+            .address_mode_w(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+            .mipmap_mode(vk::SamplerMipmapMode::LINEAR);
+        let sampler = unsafe { device.create_sampler(&sampler_info, None)? };
+
+        // Descriptor pool: 1 set, 1 texture + sampler
+        let pool_size = vk::DescriptorPoolSize::builder()
+            .type_(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .descriptor_count(1);
+        let descriptor_pool = unsafe {
+            device.create_descriptor_pool(
+                &vk::DescriptorPoolCreateInfo::builder()
+                    .pool_sizes(&[pool_size])
+                    .max_sets(1),
+                None,
+            )?
+        };
+
+        // Descriptor set: binding 0 → texture view + sampler
+        let descriptor_set = unsafe {
+            device.allocate_descriptor_sets(
+                &vk::DescriptorSetAllocateInfo::builder()
+                    .descriptor_pool(descriptor_pool)
+                    .set_layouts(&[descriptor_set_layout]),
+            )?
+        }[0];
+        let image_info = vk::DescriptorImageInfo::builder()
+            .sampler(sampler)
+            .image_view(texture_view)
+            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+        let image_infos = &[image_info];
+        let write = vk::WriteDescriptorSet::builder()
+            .dst_set(descriptor_set)
+            .dst_binding(0)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .image_info(image_infos);
+        unsafe { device.update_descriptor_sets(&[write], &[] as &[vk::CopyDescriptorSet]) };
 
         // 8. A unit sphere (radius 1), uploaded to the GPU. Drawn once per body, scaled to its radius
         let (sphere_vertices, sphere_indices) = uv_sphere(128, 64, 1.0, [0.0, 0.0, 0.0]);
@@ -267,6 +354,10 @@ impl Renderer {
             texture_image,
             texture_memory,
             texture_view,
+            sampler,
+            descriptor_set_layout,
+            descriptor_pool,
+            descriptor_set,
         })
     }
 }
@@ -442,6 +533,15 @@ impl Renderer {
                 vk::PipelineBindPoint::GRAPHICS,
                 self.pipeline,
             );
+            // Texture descriptor set (set 0)
+            self.device.cmd_bind_descriptor_sets(
+                self.command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.pipeline_layout,
+                0,
+                &[self.descriptor_set],
+                &[],
+            );
             self.device.cmd_bind_vertex_buffers(
                 self.command_buffer,
                 0,
@@ -585,6 +685,12 @@ impl Drop for Renderer {
             self.device.destroy_image_view(self.texture_view, None);
             self.device.destroy_image(self.texture_image, None);
             self.device.free_memory(self.texture_memory, None);
+            // Sampler + descriptors (the pool frees its sets)
+            self.device.destroy_sampler(self.sampler, None);
+            self.device
+                .destroy_descriptor_pool(self.descriptor_pool, None);
+            self.device
+                .destroy_descriptor_set_layout(self.descriptor_set_layout, None);
             // Pipeline
             self.device
                 .destroy_pipeline_layout(self.pipeline_layout, None);

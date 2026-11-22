@@ -6,6 +6,7 @@
 layout(location = 0) in vec3 frag_color;
 layout(location = 1) in vec3 frag_normal;
 layout(location = 2) in vec3 frag_world_pos;
+layout(location = 3) in vec2 frag_uv;
 
 // Output: the pixel's colour (r, g, b, alpha) in the colour attachment
 layout(location = 0) out vec4 out_color;
@@ -18,6 +19,9 @@ layout(push_constant) uniform Push {
     vec4 info;
 } push;
 
+// Rocky planet texture (set 0, binding 0)
+layout(set = 0, binding = 0) uniform sampler2D planet_texture;
+
 void main() {
     // Direction from this pixel TOWARDS the star: star position - pixel position, made length 1
     vec3 light_dir = normalize(push.light_pos.xyz - frag_world_pos);
@@ -29,5 +33,8 @@ void main() {
     // A glowing body (the star, w = 1) is fully bright everywhere
     brightness = max(brightness, push.info.y);
 
-    out_color = vec4(frag_color * brightness, 1.0);
+    // Base colour: texture if info.z = 1, else vertex colour
+    vec3 base = mix(frag_color, texture(planet_texture, frag_uv).rgb, push.info.z);
+
+    out_color = vec4(base * brightness, 1.0);
 }

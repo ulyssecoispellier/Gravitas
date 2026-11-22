@@ -1,6 +1,6 @@
 #version 450
 
-// Vertex shader: runs once per vertex. Places it on screen and passes its colour and normal on.
+// Vertex shader: runs once per vertex. Places it on screen and passes its colour, normal, world position and UV on.
 
 // Inputs: one vertex from the vertex buffer (see `Vertex` in mesh.rs)
 layout(location = 0) in vec3 in_pos;
@@ -20,6 +20,7 @@ layout(push_constant) uniform Push {
 layout(location = 0) out vec3 frag_color;
 layout(location = 1) out vec3 frag_normal;
 layout(location = 2) out vec3 frag_world_pos;
+layout(location = 3) out vec2 frag_uv;
 
 void main() {
     // Position on screen (clip space). 1.0 = it's a point, so translations apply
@@ -27,6 +28,7 @@ void main() {
     frag_color = in_colour;
     // The model matrix only moves the sphere (no rotation), so the normal stays valid as is
     frag_normal = in_normal;
-    
+    // World position (scaled by radius, moved to the body)
     frag_world_pos = in_pos * push.info.x + push.body_pos.xyz;
+    frag_uv = in_uv;
 }

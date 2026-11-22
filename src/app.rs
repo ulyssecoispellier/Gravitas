@@ -16,12 +16,12 @@ const DT: f64 = 0.001; // size of one physics step, in seconds
 
 // The star system (G = 1, so the units are arbitrary)
 const STAR_MASS: f64 = 1.0;
-const ROCKY_DISTANCE: f64 = 1.0; // from the star
-const GIANT_DISTANCE: f64 = 2.0; // from the star
-const GIANT_MASS: f64 = 0.02;
-// From the giant. Must stay well inside its Hill sphere (≈ 0.38 here), or the star steals the moon
-const MOON_DISTANCE: f64 = 0.25;
-const MOON_TILT: f64 = 30.0 * std::f64::consts::PI / 180.0; // 10°, in radians
+const ROCKY_DISTANCE: f64 = 1.2; // from the star
+const GIANT_DISTANCE: f64 = 2.5; // from the star
+const GIANT_MASS: f64 = 0.05;
+// From the giant. Must stay well inside its Hill sphere (≈ 0.64 here), or the star steals the moon
+const MOON_DISTANCE: f64 = 0.28;
+const MOON_TILT: f64 = 30.0 * std::f64::consts::PI / 180.0; // 30°, in radians
 
 /// Everything the program keeps between two events.
 ///
@@ -139,8 +139,7 @@ impl ApplicationHandler for App {
                                     pos.x as f32,
                                     pos.y as f32,
                                     pos.z as f32,
-                                    // Glow flag: body 0 is the star
-                                    if i == 0 { 1.0 } else { 0.0 },
+                                    0.0, // unused (padding)
                                 ],
                                 light_pos: [
                                     star_pos.x as f32,
@@ -150,8 +149,10 @@ impl ApplicationHandler for App {
                                 ],
                                 info: [
                                     body.radius() as f32,
+                                    // Glow flag (star)
                                     if i == 0 { 1.0 } else { 0.0 },
-                                    0.0,
+                                    // Texture flag (rocky planet)
+                                    if i == 1 { 1.0 } else { 0.0 },
                                     0.0,
                                 ],
                             }
@@ -218,20 +219,20 @@ impl App {
             // The star must stay first: body 0 is the light source.
             bodies: vec![
                 // Star
-                Body::new(DVec3::ZERO, DVec3::ZERO, STAR_MASS, 0.25),
+                Body::new(DVec3::ZERO, DVec3::ZERO, STAR_MASS, 0.4),
                 // Rocky (telluric) planet
                 Body::new(
                     DVec3::new(ROCKY_DISTANCE, 0.0, 0.0),
                     DVec3::new(0.0, orbit_speed(STAR_MASS, ROCKY_DISTANCE), 0.0),
                     0.00001,
-                    0.06,
+                    0.15,
                 ),
                 // Gas giant
                 Body::new(
                     DVec3::new(GIANT_DISTANCE, 0.0, 0.0),
                     DVec3::new(0.0, orbit_speed(STAR_MASS, GIANT_DISTANCE), 0.0),
                     GIANT_MASS,
-                    0.1,
+                    0.22,
                 ),
                 // Gas giant's moon: next to the giant, moving with it + orbiting it on a tilted plane
                 Body::new(
@@ -247,19 +248,19 @@ impl App {
                         )
                     },
                     0.000001,
-                    0.02,
+                    0.04,
                 ),
             ],
             frame: 0,
             last_frame: Instant::now(),
             accumulator: 0.0,
             renderer: None,
-            // Looking at the star from 5 units away, slightly from above
+            // Looking at the star from 6 units away, slightly from above
             camera: Camera::new(
                 Vec3::new(0.0, 0.0, 0.0),
                 -std::f32::consts::FRAC_PI_2,
                 (3.0f32 / 5.0).asin(),
-                5.0,
+                6.0,
                 45f32.to_radians(),
             ),
             dragging: false,

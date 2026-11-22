@@ -92,7 +92,7 @@ pub(super) fn create_image(
 
     let requirements = unsafe { device.get_image_memory_requirements(image) };
 
-    // GPU-only memory: the fastest. The CPU never writes here directly (textures arrive by a GPU copy)
+    // GPU-only memory
     let wanted = vk::MemoryPropertyFlags::DEVICE_LOCAL;
 
     let memory_properties =
@@ -116,9 +116,9 @@ pub(super) fn create_image(
 
     unsafe { device.bind_image_memory(image, memory, 0)? };
 
-    // A view on the depth part of the image
+    // View on the whole image
     let range = vk::ImageSubresourceRange::builder()
-        .aspect_mask(aspect) // COLOR for a texture, DEPTH for the depth image
+        .aspect_mask(aspect)
         .base_mip_level(0)
         .level_count(1)
         .base_array_layer(0)
@@ -126,14 +126,14 @@ pub(super) fn create_image(
     let view_info = vk::ImageViewCreateInfo::builder()
         .image(image)
         .view_type(vk::ImageViewType::_2D)
-        .format(format) // read it in the same format it was created with
+        .format(format)
         .subresource_range(range);
     let view = unsafe { device.create_image_view(&view_info, None)? };
 
     Ok((image, memory, view))
 }
 
-/// Copies `buffer` into `image` on the GPU, and prepares the image for shaders to read.
+/// Copies `buffer` into `image` (one-time command buffer), then transitions it to SHADER_READ_ONLY_OPTIMAL.
 pub(super) fn copy_buffer_to_image(
     device: &Device,
     queue: vk::Queue,
@@ -144,32 +144,95 @@ pub(super) fn copy_buffer_to_image(
     height: u32,
 ) -> Result<()> {
     unsafe {
-        // 1. Allocate a short-lived command buffer
+        // 1. Allocate a temporary command buffer
         let alloc_info = vk::CommandBufferAllocateInfo::builder()
             .command_pool(pool)
             .level(vk::CommandBufferLevel::PRIMARY)
             .command_buffer_count(1);
         let cmd = device.allocate_command_buffers(&alloc_info)?[0];
 
-        // 2. Start recording. ONE_TIME_SUBMIT: it's submitted once, then thrown away
+        // 2. Record (submitted once)
         let begin_info = vk::CommandBufferBeginInfo::builder()
             .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
         device.begin_command_buffer(cmd, &begin_info)?;
 
-        // TODO: barriers + copy (next step)
+        let range = vk::ImageSubresourceRange::builder()
+            .aspect_mask(vk::ImageAspectFlags::COLOR)
+            .level_count(1)
+            .layer_count(1);
+
+        // UNDEFINED → TRANSFER_DST_OPTIMAL
+        let to_transfer = vk::ImageMemoryBarrier::builder()
+            .old_layout(vk::ImageLayout::UNDEFINED)
+            .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+            .src_access_mask(vk::AccessFlags::empty())
+            .dst_access_mask(vk::AccessFlags::TRANSFER_WRITE)
+            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .image(image)
+            .subresource_range(range);
+        device.cmd_pipeline_barrier(
+            cmd,
+            vk::PipelineStageFlags::TOP_OF_PIPE,
+            vk::PipelineStageFlags::TRANSFER,
+            vk::DependencyFlags::empty(),
+            &[] as &[vk::MemoryBarrier],
+            &[] as &[vk::BufferMemoryBarrier],
+            &[to_transfer],
+        );
+
+        // Buffer → image, full size
+        let region = vk::BufferImageCopy::builder()
+            .image_subresource(
+                vk::ImageSubresourceLayers::builder()
+                    .aspect_mask(vk::ImageAspectFlags::COLOR)
+                    .layer_count(1),
+            )
+            .image_extent(vk::Extent3D {
+                width,
+                height,
+                depth: 1,
+            });
+        device.cmd_copy_buffer_to_image(
+            cmd,
+            buffer,
+            image,
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            &[region],
+        );
+
+        // TRANSFER_DST_OPTIMAL → SHADER_READ_ONLY_OPTIMAL (for the fragment shader)
+        let to_shader = vk::ImageMemoryBarrier::builder()
+            .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+            .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+            .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
+            .dst_access_mask(vk::AccessFlags::SHADER_READ)
+            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .image(image)
+            .subresource_range(range);
+        device.cmd_pipeline_barrier(
+            cmd,
+            vk::PipelineStageFlags::TRANSFER,
+            vk::PipelineStageFlags::FRAGMENT_SHADER,
+            vk::DependencyFlags::empty(),
+            &[] as &[vk::MemoryBarrier],
+            &[] as &[vk::BufferMemoryBarrier],
+            &[to_shader],
+        );
 
         // 3. Stop recording
         device.end_command_buffer(cmd)?;
 
-        // 4. Submit: no semaphores, no fence (step 5 waits instead)
+        // 4. Submit (no semaphores, no fence)
         let command_buffers = &[cmd];
         let submit_info = vk::SubmitInfo::builder().command_buffers(command_buffers);
         device.queue_submit(queue, &[submit_info], vk::Fence::null())?;
 
-        // 5. The CPU waits until the GPU has finished the copy
+        // 5. Wait for the copy to finish
         device.queue_wait_idle(queue)?;
 
-        // 6. The command buffer is no longer needed
+        // 6. Free the command buffer
         device.free_command_buffers(pool, command_buffers);
     }
 
