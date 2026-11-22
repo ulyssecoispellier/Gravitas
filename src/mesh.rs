@@ -58,32 +58,6 @@ impl Vertex {
     }
 }
 
-/// Leftover from the square lesson (not used anymore), kept as a tiny mesh example.
-pub const SQUARE: [Vertex; 4] = [
-    Vertex {
-        pos: [-0.05, -0.05, 0.0],
-        colour: [0.0, 1.0, 0.0],
-        normal: [0.0, 0.0, 0.0],
-    },
-    Vertex {
-        pos: [0.05, -0.05, 0.0],
-        colour: [0.0, 0.0, 1.0],
-        normal: [0.0, 0.0, 0.0],
-    },
-    Vertex {
-        pos: [0.05, 0.05, 0.0],
-        colour: [1.0, 0.0, 0.0],
-        normal: [0.0, 0.0, 0.0],
-    },
-    Vertex {
-        pos: [-0.05, 0.05, 0.0],
-        colour: [0.0, 1.0, 0.0],
-        normal: [0.0, 0.0, 0.0],
-    },
-];
-/// The square's 2 triangles: 0-1-2 and 0-2-3, sharing the diagonal 0–2.
-pub const SQUARE_INDICES: [u16; 6] = [0, 1, 2, 0, 2, 3];
-
 /// Generates a UV sphere: like a globe, rings of latitude × segments of longitude.
 ///
 /// Returns the vertices and the indices that link them into triangles.

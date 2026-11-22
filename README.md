@@ -35,12 +35,13 @@ It is also a learning project: the goal is to understand Rust and Vulkan from th
 | Depth buffer (spheres correctly hide each other) | ✅ Done |
 | Orbit camera (drag to rotate, scroll to zoom, arrows for FOV) | ✅ Done |
 | Window resizing (swapchain + depth image rebuilt) | ✅ Done |
+| Lighting: per-pixel diffuse light from the star (normals, push constants struct) | ✅ Done |
 | Rocky planet (mesh, textures) | ⬜ Planned |
 | Star + gas giant, ray-traced in shaders | ⬜ Planned |
 | Atmospheric scattering | ⬜ Planned |
 | Bloom + HDR post-processing | ⬜ Planned |
 
-Right now, running the program opens a window, runs the physics in real time, and shows the two bodies orbiting each other as solid coloured spheres. Each sphere is a UV sphere generated in Rust and uploaded to the GPU through vertex and index buffers. It is drawn once per body, and each body's model × view × projection matrix (a perspective camera looking at the orbit from an angle) is sent with push constants. A depth buffer makes the closest surface win, so the spheres hide each other correctly. The camera orbits the system with the mouse, and the window can be resized freely: the swapchain and depth image are rebuilt at the new size. Under the hood, it sets up Vulkan: it connects Vulkan to the window (surface), picks the best GPU that can draw and present, opens a logical device, creates a swapchain, and prepares command buffers and synchronization objects. Each frame, it waits for the previous one, takes a swapchain image, records the drawing commands (dynamic rendering, Vulkan 1.3), submits them and presents the image.
+Right now, running the program opens a window, runs the physics in real time, and shows the two bodies orbiting each other as solid coloured spheres. Each sphere is a UV sphere generated in Rust and uploaded to the GPU through vertex and index buffers. It is drawn once per body, and each body's model × view × projection matrix (a perspective camera looking at the orbit from an angle) is sent with push constants. A depth buffer makes the closest surface win, so the spheres hide each other correctly. Body 0 acts as the star: it glows, and lights the other body per pixel from its position (diffuse lighting with vertex normals). The camera orbits the system with the mouse, and the window can be resized freely: the swapchain and depth image are rebuilt at the new size. Under the hood, it sets up Vulkan: it connects Vulkan to the window (surface), picks the best GPU that can draw and present, opens a logical device, creates a swapchain, and prepares command buffers and synchronization objects. Each frame, it waits for the previous one, takes a swapchain image, records the drawing commands (dynamic rendering, Vulkan 1.3), submits them and presents the image.
 
 ---
 

@@ -7,7 +7,6 @@
 use std::collections::HashSet;
 
 use anyhow::{Ok, Result, anyhow};
-use glam::Mat4;
 use std::ffi::{CStr, c_void};
 use vulkanalia::Version;
 use vulkanalia::loader::{LIBRARY, LibloadingLoader};
@@ -31,6 +30,18 @@ const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
 const VALIDATION_LAYER: vk::ExtensionName =
     vk::ExtensionName::from_bytes(b"VK_LAYER_KHRONOS_validation");
 
+/// The data sent to the shaders for each body drawn (through push constants).
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct PushConstants {
+    /// Where to draw it on screen: projection × view × model (what you send today)
+    pub transform: [f32; 16],
+    /// Where this body is in space (x, y, z), + 4th number: 1.0 if the body glows (the star), else 0.0
+    pub body_pos: [f32; 4],
+    /// Where the star is (x, y, z), + an unused 4th number (padding)
+    pub light_pos: [f32; 4],
+}
+
 /// Owns every Vulkan object. Created once by `new`, cleaned up by `Drop`.
 pub struct Renderer {
     /// The loaded Vulkan library (kept alive; `_` because we never read it again)
@@ -41,8 +52,6 @@ pub struct Renderer {
     messenger: vk::DebugUtilsMessengerEXT,
     /// The real GPU we picked
     physical_device: vk::PhysicalDevice,
-    /// Index of the queue family that can draw and present
-    graphics_family: u32,
     /// Our session on the GPU (the "logical device"): almost every call goes through it
     device: Device,
     /// Where we submit command buffers for the GPU to run
@@ -135,14 +144,10 @@ impl Renderer {
         };
 
         // 6. The shaders (compiled to SPIR-V by build.rs, embedded in the program) and the pipeline
-        let vert_module = create_shader_module(
-            &device,
-            include_bytes!("../shaders/triangle.vert.spv"),
-        )?;
-        let frag_module = create_shader_module(
-            &device,
-            include_bytes!("../shaders/triangle.frag.spv"),
-        )?;
+        let vert_module =
+            create_shader_module(&device, include_bytes!("../shaders/triangle.vert.spv"))?;
+        let frag_module =
+            create_shader_module(&device, include_bytes!("../shaders/triangle.frag.spv"))?;
 
         let (pipeline_layout, pipeline) =
             create_pipeline(&device, swapchain.format, vert_module, frag_module)?;
@@ -187,7 +192,6 @@ impl Renderer {
             instance,
             messenger,
             physical_device,
-            graphics_family,
             device,
             graphics_queue,
             surface,
@@ -215,7 +219,7 @@ impl Renderer {
     /// Draws one frame. Each body is drawn with its own transform matrix.
     ///
     /// Wait for the previous frame → get a swapchain image → record commands → submit → present.
-    pub fn draw_frame(&mut self, transforms: &[Mat4]) -> Result<()> {
+    pub fn draw_frame(&mut self, pushes: &[PushConstants]) -> Result<()> {
         unsafe {
             // 1. Wait until the GPU has finished the previous frame, then re-arm the fence
             self.device
@@ -236,7 +240,7 @@ impl Renderer {
             // 3. Record this frame's commands
             self.device
                 .reset_command_buffer(self.command_buffer, vk::CommandBufferResetFlags::empty())?;
-            self.record_commands(index, transforms)?;
+            self.record_commands(index, pushes)?;
 
             // 4. Submit: wait for the image before writing colours,
             // signal `render_finished` when done, then signal the fence
@@ -273,7 +277,7 @@ impl Renderer {
     /// Records all the drawing commands for one frame into the command buffer.
     ///
     /// `i` = index of the swapchain image we draw into.
-    fn record_commands(&self, i: usize, transforms: &[Mat4]) -> Result<()> {
+    fn record_commands(&self, i: usize, pushes: &[PushConstants]) -> Result<()> {
         unsafe {
             self.device.begin_command_buffer(
                 self.command_buffer,
@@ -408,13 +412,13 @@ impl Renderer {
                 &[vk::Rect2D::builder().extent(self.swapchain.extent)],
             );
             // One draw per body: send its matrix (push constant), then draw the sphere
-            for transform in transforms {
+            for push in pushes {
                 self.device.cmd_push_constants(
                     self.command_buffer,
                     self.pipeline_layout,
-                    vk::ShaderStageFlags::VERTEX,
+                    vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
                     0,
-                    bytemuck::bytes_of(&transform.to_cols_array()),
+                    bytemuck::bytes_of(push),
                 );
                 self.device
                     .cmd_draw_indexed(self.command_buffer, self.index_count, 1, 0, 0, 0);
@@ -941,9 +945,9 @@ fn create_pipeline(
 
     // Push constant: one 4×4 matrix (64 bytes) for the vertex shader
     let push = vk::PushConstantRange::builder()
-        .stage_flags(vk::ShaderStageFlags::VERTEX)
+        .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
         .offset(0)
-        .size(std::mem::size_of::<[f32; 16]>() as u32);
+        .size(size_of::<PushConstants>() as u32);
 
     let layout = unsafe {
         device.create_pipeline_layout(

@@ -10,7 +10,7 @@ use winit::window::{Window, WindowId};
 
 use crate::camera::Camera;
 use crate::physics::{Body, step_euler};
-use crate::renderer::Renderer;
+use crate::renderer::{PushConstants, Renderer};
 
 const ORBIT_SPEED: f64 = 0.5; // speed for a circular orbit
 const DT: f64 = 0.001; // size of one physics step, in seconds
@@ -108,11 +108,15 @@ impl ApplicationHandler for App {
 
                     let view = self.camera.view();
 
-                    // One matrix per body
-                    let transforms: Vec<Mat4> = self
+                    // Body 0 plays the star: everything is lit from its position
+                    let star_pos = self.bodies[0].pos();
+
+                    // One box of push constants per body: its matrix, its position, the light's position
+                    let pushes: Vec<PushConstants> = self
                         .bodies
                         .iter()
-                        .map(|body| {
+                        .enumerate()
+                        .map(|(i, body)| {
                             let pos = body.pos();
                             // Where this body is in the world
                             let model = Mat4::from_translation(Vec3 {
@@ -121,12 +125,26 @@ impl ApplicationHandler for App {
                                 z: pos.z as f32,
                             });
 
-                            // Read right to left: place it in the world, see it from the camera, apply the lens
-                            projection * view * model
+                            PushConstants {
+                                transform: (projection * view * model).to_cols_array(),
+                                body_pos: [
+                                    pos.x as f32,
+                                    pos.y as f32,
+                                    pos.z as f32,
+                                    // Glow flag: body 0 is the star
+                                    if i == 0 { 1.0 } else { 0.0 },
+                                ],
+                                light_pos: [
+                                    star_pos.x as f32,
+                                    star_pos.y as f32,
+                                    star_pos.z as f32,
+                                    0.0,
+                                ],
+                            }
                         })
                         .collect();
 
-                    renderer.draw_frame(&transforms).unwrap();
+                    renderer.draw_frame(&pushes).unwrap();
                 }
 
                 // Ask for the next frame: this keeps the loop going

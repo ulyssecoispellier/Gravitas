@@ -6,6 +6,7 @@ use glam::DVec3;
 ///
 /// The fields are `pub(super)`: usable inside the `physics` module only.
 /// Code outside it reads them through the getters below.
+#[allow(dead_code)]
 pub struct Body {
     /// Position, in simulation units (`f64` for precision)
     pub(super) pos: DVec3,
@@ -34,6 +35,7 @@ impl Body {
     }
 
     /// Radius of the body.
+    #[allow(dead_code)]
     pub fn radius(&self) -> f64 {
         self.radius
     }
