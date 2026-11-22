@@ -46,9 +46,34 @@ void main() {
         // Its depth on screen: same maths as the planets' vertex shader
         vec4 clip = push.view_proj * vec4(hit, 1.0);
         gl_FragDepth = clip.z / clip.w;
-        out_color = vec4(1.0, 0.97, 0.92, 1.0); // hit: the Sun
+
+        // Limb darkening: mu = 1 at the disc's centre, 0 at its edge
+        vec3 normal = normalize(hit - push.sun.xyz);
+        float mu = dot(normal, -dir);
+        float brightness = 1.0 - 0.6 * (1.0 - mu);
+        
+        out_color = vec4(vec3(1.0, 0.97, 0.92) * brightness, 1.0); // hit: the Sun
     } else {
         gl_FragDepth = 0.9999;
-        out_color = vec4(0.0, 0.0, 0.0, 1.0); // miss: black space
+
+        // Closest distance between this ray and the Sun's centre
+        float along = dot(push.sun.xyz - origin, dir);
+        vec3 closest = origin + along * dir;
+        float d = length(push.sun.xyz - closest);
+
+        // Glow: 0.4 at the Sun's edge (matches the limb), fading fast with distance from the surface
+        float glow = exp(-(d - push.sun.w) / (0.15 * push.sun.w)) * 0.4;
+
+        // Sun behind the camera: no glow
+        if (along < 0.0) {
+            glow = 0.0;
+        }
+
+        // Miss: black space + the Sun's glow
+        out_color = vec4(vec3(1.0, 0.97, 0.92) * glow, 1.0);
     }
+
+    // Dithering: tiny per-pixel noise hides the 256-level steps (banding)
+    float noise = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+    out_color.rgb += (noise - 0.5) / 255.0;
 }
