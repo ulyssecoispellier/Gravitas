@@ -90,6 +90,10 @@ pub struct Renderer {
     pipeline_layout: vk::PipelineLayout,
     /// All the drawing settings, baked together (shaders, vertex format, depth test...)
     pipeline: vk::Pipeline,
+    /// Layout of the ray-tracing pass (same data as `pipeline_layout`)
+    ray_pipeline_layout: vk::PipelineLayout,
+    /// Full-screen ray-tracing pass (no vertex buffer)
+    ray_pipeline: vk::Pipeline,
     /// The sphere's vertices
     vertex_buffer: vk::Buffer,
     /// The memory behind `vertex_buffer`
@@ -199,12 +203,29 @@ impl Renderer {
             )?
         };
 
+        // Ray-tracing pass: full-screen triangle, no vertex buffer
+        let ray_vert_module =
+            create_shader_module(&device, include_bytes!("../shaders/raytrace.vert.spv"))?;
+        let ray_frag_module =
+            create_shader_module(&device, include_bytes!("../shaders/raytrace.frag.spv"))?;
+
+        let (ray_pipeline_layout, ray_pipeline) = create_pipeline(
+            &device,
+            swapchain.format,
+            ray_vert_module,
+            ray_frag_module,
+            descriptor_set_layout,
+            false,
+        )?;
+
+        // Mesh pass: the planets
         let (pipeline_layout, pipeline) = create_pipeline(
             &device,
             swapchain.format,
             vert_module,
             frag_module,
             descriptor_set_layout,
+            true,
         )?;
 
         // 7. Rocky planet texture: load as RGBA8
@@ -315,7 +336,7 @@ impl Renderer {
         )?;
 
         // The pipeline has its own copy of the shaders now, so the modules can go
-        for module in [vert_module, frag_module] {
+        for module in [vert_module, frag_module, ray_vert_module, ray_frag_module] {
             unsafe {
                 device.destroy_shader_module(module, None);
             }
@@ -346,6 +367,8 @@ impl Renderer {
             in_flight,
             pipeline_layout,
             pipeline,
+            ray_pipeline_layout,
+            ray_pipeline,
             vertex_buffer,
             vertex_memory,
             index_buffer,
@@ -531,11 +554,6 @@ impl Renderer {
             // Start drawing, and set what every draw uses: pipeline, mesh buffers, viewport
             self.device
                 .cmd_begin_rendering(self.command_buffer, &rendering);
-            self.device.cmd_bind_pipeline(
-                self.command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.pipeline,
-            );
             // Texture descriptor set (set 0)
             self.device.cmd_bind_descriptor_sets(
                 self.command_buffer,
@@ -569,6 +587,19 @@ impl Renderer {
                 self.command_buffer,
                 0,
                 &[vk::Rect2D::builder().extent(self.swapchain.extent)],
+            );
+            // Ray-tracing pass: one full-screen triangle (3 vertices, no buffer)
+            self.device.cmd_bind_pipeline(
+                self.command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.ray_pipeline,
+            );
+            self.device.cmd_draw(self.command_buffer, 3, 1, 0, 0);
+            // Back to the mesh pipeline for the planets
+            self.device.cmd_bind_pipeline(
+                self.command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.pipeline,
             );
             // One draw per body: send its matrix (push constant), then draw the sphere
             for push in pushes {
@@ -698,6 +729,9 @@ impl Drop for Renderer {
             self.device
                 .destroy_pipeline_layout(self.pipeline_layout, None);
             self.device.destroy_pipeline(self.pipeline, None);
+            self.device.destroy_pipeline(self.ray_pipeline, None);
+            self.device
+                .destroy_pipeline_layout(self.ray_pipeline_layout, None);
             // Window-size objects (swapchain, depth image), then the device itself
             self.destroy_swapchain();
             self.device.destroy_device(None);

@@ -22,7 +22,7 @@ const SUN_RADIUS: f64 = 0.5;
 const SUN_COLOUR: [f32; 3] = [1.0, 0.97, 0.92]; // white (yellow only through an atmosphere)
 
 /// One planet's starting data.
-struct PlanetData {
+struct BodyData {
     /// Distance from the Sun
     distance: f64,
     /// Mass, relative to the Sun
@@ -33,58 +33,58 @@ struct PlanetData {
     colour: [f32; 3],
 }
 
-const PLANETS: [PlanetData; 8] = [
+const BODIES: [BodyData; 8] = [
     // Mercury
-    PlanetData {
+    BodyData {
         distance: 1.25,
         mass: 1.66e-7,
         radius: 0.035,
         colour: [0.6, 0.58, 0.55],
     },
     // Venus
-    PlanetData {
+    BodyData {
         distance: 1.70,
         mass: 2.45e-6,
         radius: 0.075,
         colour: [0.9, 0.8, 0.55],
     },
     // Earth (textured)
-    PlanetData {
+    BodyData {
         distance: 2.00,
         mass: 3.00e-6,
         radius: 0.08,
         colour: [0.3, 0.5, 0.9],
     },
     // Mars
-    PlanetData {
+    BodyData {
         distance: 2.47,
         mass: 3.23e-7,
         radius: 0.05,
         colour: [0.8, 0.4, 0.25],
     },
     // Jupiter
-    PlanetData {
+    BodyData {
         distance: 4.56,
         mass: 9.55e-4,
         radius: 0.25,
         colour: [0.85, 0.7, 0.5],
     },
     // Saturn
-    PlanetData {
+    BodyData {
         distance: 6.19,
         mass: 2.86e-4,
         radius: 0.21,
         colour: [0.9, 0.8, 0.55],
     },
     // Uranus
-    PlanetData {
+    BodyData {
         distance: 8.76,
         mass: 4.37e-5,
         radius: 0.12,
         colour: [0.6, 0.85, 0.9],
     },
     // Neptune
-    PlanetData {
+    BodyData {
         distance: 10.97,
         mass: 5.15e-5,
         radius: 0.12,
@@ -121,6 +121,8 @@ pub struct App {
     panning: bool,
     /// Mouse position at the previous `CursorMoved` event
     last_cursor: (f64, f64),
+    /// Simulated seconds per real second (time speed)
+    sim_speed: f64,
 }
 
 // winit calls these methods when something happens (the app starts, a key is pressed...)
@@ -168,6 +170,13 @@ impl ApplicationHandler for App {
                     {
                         self.camera.reset()
                     }
+                    // ← / →: slow down / speed up time (×0 to ×10)
+                    (Key::Named(NamedKey::ArrowLeft), ElementState::Pressed) => {
+                        self.sim_speed = (self.sim_speed - 0.25).clamp(0.0, 10.0);
+                    }
+                    (Key::Named(NamedKey::ArrowRight), ElementState::Pressed) => {
+                        self.sim_speed = (self.sim_speed + 0.25).clamp(0.0, 10.0);
+                    }
                     // Any other key (or a key release): do nothing
                     (_, _) => (),
                 }
@@ -181,7 +190,7 @@ impl ApplicationHandler for App {
 
                 // Fixed timestep: run as many DT-sized physics steps as fit in that time.
                 // The leftover stays in the accumulator for the next frame.
-                self.accumulator += frame_time;
+                self.accumulator += frame_time * self.sim_speed;
                 while self.accumulator >= DT {
                     step_euler(&mut self.bodies, DT);
                     self.accumulator -= DT;
@@ -310,7 +319,7 @@ impl App {
             window: None,
             // The Sun first (body 0 = the light source), then each planet on a circular orbit
             bodies: std::iter::once(Body::new(DVec3::ZERO, DVec3::ZERO, SUN_MASS, SUN_RADIUS))
-                .chain(PLANETS.iter().map(|p| {
+                .chain(BODIES.iter().map(|p| {
                     Body::new(
                         DVec3::new(p.distance, 0.0, 0.0),
                         DVec3::new(0.0, orbit_speed(SUN_MASS, p.distance), 0.0),
@@ -320,7 +329,7 @@ impl App {
                 }))
                 .collect(),
             colours: std::iter::once(SUN_COLOUR)
-                .chain(PLANETS.iter().map(|p| p.colour))
+                .chain(BODIES.iter().map(|p| p.colour))
                 .collect(),
             frame: 0,
             last_frame: Instant::now(),
@@ -337,6 +346,7 @@ impl App {
             dragging: false,
             panning: false,
             last_cursor: (0.0, 0.0),
+            sim_speed: 1.0,
         }
     }
 }

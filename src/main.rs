@@ -11,6 +11,7 @@ mod app;
 mod camera;
 mod mesh;
 mod physics;
+mod ray;
 mod renderer;
 
 /// Entry point: create the event loop and run the app until it exits.

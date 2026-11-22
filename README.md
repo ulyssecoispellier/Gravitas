@@ -139,6 +139,9 @@ In debug builds, Vulkan validation messages are printed to the terminal (🟡 wa
 | Left click + drag | Rotate the camera around the system |
 | Scroll | Zoom in / out |
 | `↑` / `↓` | Widen / narrow the field of view |
+| `←` / `→` | Slow down / speed up time (×0 to ×10) |
+| Right click + drag | Move around (pan) |
+| `R` | Re-centre the camera on the Sun |
 
 ---
 

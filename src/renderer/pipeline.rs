@@ -26,6 +26,7 @@ pub(super) fn create_pipeline(
     vert: vk::ShaderModule,
     frag: vk::ShaderModule,
     set_layout: vk::DescriptorSetLayout,
+    with_vertices: bool,
 ) -> Result<(vk::PipelineLayout, vk::Pipeline)> {
     // The 2 shaders, both starting at their `main` function
     let stages = &[
@@ -39,12 +40,16 @@ pub(super) fn create_pipeline(
             .name(b"main\0"),
     ];
 
-    // Vertex format: comes from `Vertex` in mesh.rs
+    // Vertex format: `Vertex` from mesh.rs, or none (the full-screen pass makes its own vertices)
     let bindings = &[Vertex::binding_description()];
     let attributes = Vertex::attribute_descriptions();
-    let vertex_input = vk::PipelineVertexInputStateCreateInfo::builder()
-        .vertex_binding_descriptions(bindings)
-        .vertex_attribute_descriptions(&attributes);
+    let vertex_input = if with_vertices {
+        vk::PipelineVertexInputStateCreateInfo::builder()
+            .vertex_binding_descriptions(bindings)
+            .vertex_attribute_descriptions(&attributes)
+    } else {
+        vk::PipelineVertexInputStateCreateInfo::builder()
+    };
 
     // Every 3 indices = 1 triangle
     let input_assembly = vk::PipelineInputAssemblyStateCreateInfo::builder()
