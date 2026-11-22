@@ -58,6 +58,18 @@ pub struct PushConstants {
     pub colour: [f32; 4],
 }
 
+/// The data sent to the ray-tracing shader (through push constants).
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct RayPushConstants {
+    /// projection × view: world → screen (the shader inverts it)
+    pub view_proj: [f32; 16],
+    /// Camera position (x, y, z), w = unused
+    pub camera_pos: [f32; 4],
+    /// Sun: centre (x, y, z), w = radius
+    pub sun: [f32; 4],
+}
+
 /// Owns every Vulkan object. Created once by `new`, cleaned up by `Drop`.
 pub struct Renderer {
     /// The loaded Vulkan library (kept alive; `_` because we never read it again)
@@ -392,7 +404,11 @@ impl Renderer {
     /// Draws one frame. Each body is drawn with its own transform matrix.
     ///
     /// Wait for the previous frame → get a swapchain image → record commands → submit → present.
-    pub fn draw_frame(&mut self, pushes: &[PushConstants]) -> Result<()> {
+    pub fn draw_frame(
+        &mut self,
+        pushes: &[PushConstants],
+        ray_push: &RayPushConstants,
+    ) -> Result<()> {
         unsafe {
             // 1. Wait until the GPU has finished the previous frame, then re-arm the fence
             self.device
@@ -413,7 +429,7 @@ impl Renderer {
             // 3. Record this frame's commands
             self.device
                 .reset_command_buffer(self.command_buffer, vk::CommandBufferResetFlags::empty())?;
-            self.record_commands(index, pushes)?;
+            self.record_commands(index, pushes, ray_push)?;
 
             // 4. Submit: wait for the image before writing colours,
             // signal `render_finished` when done, then signal the fence
@@ -450,7 +466,12 @@ impl Renderer {
     /// Records all the drawing commands for one frame into the command buffer.
     ///
     /// `i` = index of the swapchain image we draw into.
-    fn record_commands(&self, i: usize, pushes: &[PushConstants]) -> Result<()> {
+    fn record_commands(
+        &self,
+        i: usize,
+        pushes: &[PushConstants],
+        ray_push: &RayPushConstants,
+    ) -> Result<()> {
         unsafe {
             self.device.begin_command_buffer(
                 self.command_buffer,
@@ -593,6 +614,13 @@ impl Renderer {
                 self.command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
                 self.ray_pipeline,
+            );
+            self.device.cmd_push_constants(
+                self.command_buffer,
+                self.ray_pipeline_layout,
+                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+                0,
+                bytemuck::bytes_of(ray_push),
             );
             self.device.cmd_draw(self.command_buffer, 3, 1, 0, 0);
             // Back to the mesh pipeline for the planets

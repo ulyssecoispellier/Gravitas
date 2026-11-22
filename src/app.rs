@@ -10,7 +10,7 @@ use winit::window::{Window, WindowId};
 
 use crate::camera::Camera;
 use crate::physics::{Body, orbit_speed, step_euler};
-use crate::renderer::{PushConstants, Renderer};
+use crate::renderer::{PushConstants, RayPushConstants, Renderer};
 
 const DT: f64 = 0.001; // size of one physics step, in seconds
 
@@ -172,10 +172,10 @@ impl ApplicationHandler for App {
                     }
                     // ← / →: slow down / speed up time (×0 to ×10)
                     (Key::Named(NamedKey::ArrowLeft), ElementState::Pressed) => {
-                        self.sim_speed = (self.sim_speed - 0.25).clamp(0.0, 10.0);
+                        self.sim_speed = (self.sim_speed - 0.25).clamp(0.0, 50.0);
                     }
                     (Key::Named(NamedKey::ArrowRight), ElementState::Pressed) => {
-                        self.sim_speed = (self.sim_speed + 0.25).clamp(0.0, 10.0);
+                        self.sim_speed = (self.sim_speed + 0.25).clamp(0.0, 50.0);
                     }
                     // Any other key (or a key release): do nothing
                     (_, _) => (),
@@ -214,6 +214,7 @@ impl ApplicationHandler for App {
                         .bodies
                         .iter()
                         .enumerate()
+                        .skip(1)
                         .map(|(i, body)| {
                             let pos = body.pos();
                             // Right to left: scale the unit sphere to the body's radius, then move it into place
@@ -255,7 +256,20 @@ impl ApplicationHandler for App {
                         })
                         .collect();
 
-                    renderer.draw_frame(&pushes).unwrap();
+                    // Ray-tracing pass data: screen → world matrix, camera position, Sun (centre + radius)
+                    let eye = self.camera.eye();
+                    let ray_push = RayPushConstants {
+                        view_proj: (projection * view).to_cols_array(),
+                        camera_pos: [eye.x, eye.y, eye.z, 0.0],
+                        sun: [
+                            star_pos.x as f32,
+                            star_pos.y as f32,
+                            star_pos.z as f32,
+                            self.bodies[0].radius() as f32,
+                        ],
+                    };
+
+                    renderer.draw_frame(&pushes, &ray_push).unwrap();
                 }
 
                 // Ask for the next frame: this keeps the loop going

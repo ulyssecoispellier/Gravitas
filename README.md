@@ -40,6 +40,8 @@ It is also a learning project: the goal is to understand Rust and Vulkan from th
 | The Solar System: Sun + 8 planets (real masses, compressed distances, per-body colours) | ✅ Done |
 | Rocky planet texture (staging upload, sampler, descriptors) | ✅ Done |
 | Star + gas giant, ray-traced in shaders | ⬜ Planned |
+| Ray-traced Sun: depth (`gl_FragDepth`), limb darkening, glow | 🚧 In progress |
+| Shadow rays: eclipses and moon shadows (ray from each planet pixel towards the Sun) | ⬜ Planned |
 | Atmospheric scattering | ⬜ Planned |
 | Bloom + HDR post-processing | ⬜ Planned |
 | Planetary ring: flat disk mesh with a transparent striped texture | ⬜ Planned |

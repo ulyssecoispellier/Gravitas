@@ -30,20 +30,23 @@ impl Camera {
         }
     }
 
-    /// The view matrix: moves the world so it's seen from the camera.
-    ///
-    /// The camera's position is a point on a sphere around the target, computed from the angles.
-    pub fn view(&self) -> Mat4 {
+    /// Camera position in the world: a point on a sphere around the target.
+    pub fn eye(&self) -> Vec3 {
         // Spherical → Cartesian. Pitch is measured from the horizon: cos for x/y, sin for z
         let x = self.distance * self.pitch.cos() * self.yaw.cos();
         let y = self.distance * self.pitch.cos() * self.yaw.sin();
         let z = self.distance * self.pitch.sin();
 
         // The sphere is centred on the target, not on the origin
-        let eye = Vec3 { x, y, z } + self.target;
+        Vec3 { x, y, z } + self.target
+    }
 
+    /// The view matrix: moves the world so it's seen from the camera.
+    ///
+    /// The camera's position is a point on a sphere around the target, computed from the angles.
+    pub fn view(&self) -> Mat4 {
         // Look from `eye` at the target, with Z as "up"
-        glam::camera::rh::view::look_at_mat4(eye, self.target, Vec3::Z)
+        glam::camera::rh::view::look_at_mat4(self.eye(), self.target, Vec3::Z)
     }
 
     /// Turns the camera around the target. `dx`/`dy` = mouse movement in pixels.
