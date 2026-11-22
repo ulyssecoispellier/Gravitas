@@ -1,3 +1,9 @@
+//! The Vulkan renderer: sets up the GPU once, then draws a frame each time it's asked.
+//!
+//! Setup order (in `Renderer::new`): instance → debug messenger → surface → GPU → device
+//! → swapchain → depth image → command buffer → sync objects → pipeline → mesh buffers.
+//! `Drop` destroys everything in reverse order.
+
 use std::collections::HashSet;
 
 use anyhow::{Ok, Result, anyhow};
@@ -15,40 +21,70 @@ use winit::window::Window;
 
 use crate::mesh::{Vertex, uv_sphere};
 
+/// From this Vulkan version on, macOS needs the "portability" extensions to see MoltenVK / KosmicKrisp
 const PORTABILITY_MACOS_VERSION: Version = Version::new(1, 3, 216);
+/// Pixel format of the depth image: one 32-bit float per pixel
 const DEPTH_FORMAT: vk::Format = vk::Format::D32_SFLOAT;
+/// Validation layers on in debug builds (`cargo run`), off in release (`cargo run --release`)
 const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
+/// The Khronos validation layer: checks every Vulkan call and reports mistakes
 const VALIDATION_LAYER: vk::ExtensionName =
     vk::ExtensionName::from_bytes(b"VK_LAYER_KHRONOS_validation");
 
+/// Owns every Vulkan object. Created once by `new`, cleaned up by `Drop`.
 pub struct Renderer {
+    /// The loaded Vulkan library (kept alive; `_` because we never read it again)
     _entry: Entry,
+    /// Our connection to Vulkan
     instance: Instance,
+    /// Sends validation messages to `debug_callback`
     messenger: vk::DebugUtilsMessengerEXT,
+    /// The real GPU we picked
     physical_device: vk::PhysicalDevice,
+    /// Index of the queue family that can draw and present
     graphics_family: u32,
+    /// Our session on the GPU (the "logical device"): almost every call goes through it
     device: Device,
+    /// Where we submit command buffers for the GPU to run
     graphics_queue: vk::Queue,
+    /// The window, as Vulkan sees it
     surface: vk::SurfaceKHR,
+    /// The images shown in the window, in turn
     swapchain: Swapchain,
+    /// Memory pool that command buffers are allocated from
     command_pool: vk::CommandPool,
+    /// The list of commands, recorded again each frame
     command_buffer: vk::CommandBuffer,
+    /// GPU signal: "the swapchain image is free to be drawn into"
     image_available: vk::Semaphore,
+    /// GPU signal, one per swapchain image: "drawing is done, it can be presented"
     render_finished: Vec<vk::Semaphore>,
+    /// CPU signal: "the GPU finished the previous frame"
     in_flight: vk::Fence,
+    /// What extra data the shaders receive (here: one push constant matrix)
     pipeline_layout: vk::PipelineLayout,
+    /// All the drawing settings, baked together (shaders, vertex format, depth test...)
     pipeline: vk::Pipeline,
+    /// The sphere's vertices
     vertex_buffer: vk::Buffer,
+    /// The memory behind `vertex_buffer`
     vertex_memory: vk::DeviceMemory,
+    /// The sphere's indices (which vertices form each triangle)
     index_buffer: vk::Buffer,
+    /// The memory behind `index_buffer`
     index_memory: vk::DeviceMemory,
+    /// How many indices to draw per sphere
     index_count: u32,
+    /// One depth per pixel, used to hide what's behind
     depth_image: vk::Image,
+    /// The memory behind `depth_image` (GPU-only)
     depth_memory: vk::DeviceMemory,
+    /// How the pipeline sees `depth_image`
     depth_view: vk::ImageView,
 }
 
 impl Renderer {
+    /// Sets up everything needed to draw. Called once, when the window is created.
     pub fn new(window: &Window) -> Result<Self> {
         // 1. Connect to Vulkan
         let loader = unsafe { LibloadingLoader::new(LIBRARY)? };
@@ -69,6 +105,7 @@ impl Renderer {
         // 3. The images that will be shown in the window
         let swapchain = create_swapchain(window, &instance, &device, physical_device, surface)?;
 
+        // The depth image: same size as the swapchain images (one depth per pixel)
         let (depth_image, depth_memory, depth_view) =
             create_depth_image(&instance, &device, physical_device, swapchain.extent)?;
 
@@ -97,6 +134,7 @@ impl Renderer {
             )?
         };
 
+        // 6. The shaders (compiled to SPIR-V by build.rs, embedded in the program) and the pipeline
         let vert_module =
             create_shader_module(&device, include_bytes!("../shaders/triangle.vert.spv"))?;
         let frag_module =
@@ -105,6 +143,7 @@ impl Renderer {
         let (pipeline_layout, pipeline) =
             create_pipeline(&device, swapchain.format, vert_module, frag_module)?;
 
+        // 7. The sphere mesh, uploaded to the GPU (one mesh, drawn once per body)
         let (sphere_vertices, sphere_indices) = uv_sphere(32, 16, 0.7, [0.0, 0.0, 0.0]);
         let (vertex_buffer, vertex_memory) = create_buffer(
             &instance,
@@ -123,12 +162,14 @@ impl Renderer {
             &sphere_indices,
         )?;
 
+        // The pipeline has its own copy of the shaders now, so the modules can go
         for module in [vert_module, frag_module] {
             unsafe {
                 device.destroy_shader_module(module, None);
             }
         }
 
+        // Debug info about the swapchain
         println!(
             "Nb of img : {:?} | Width : {:?} | Height {:?} | Format : {:?}",
             swapchain.images.len(),
@@ -167,12 +208,17 @@ impl Renderer {
 }
 
 impl Renderer {
+    /// Draws one frame. Each body is drawn with its own transform matrix.
+    ///
+    /// Wait for the previous frame → get a swapchain image → record commands → submit → present.
     pub fn draw_frame(&mut self, transforms: &[Mat4]) -> Result<()> {
         unsafe {
+            // 1. Wait until the GPU has finished the previous frame, then re-arm the fence
             self.device
                 .wait_for_fences(&[self.in_flight], true, u64::MAX)?;
             self.device.reset_fences(&[self.in_flight])?;
 
+            // 2. Get the next swapchain image. The GPU signals `image_available` when it's really free
             let index = self
                 .device
                 .acquire_next_image_khr(
@@ -183,10 +229,13 @@ impl Renderer {
                 )?
                 .0 as usize;
 
+            // 3. Record this frame's commands
             self.device
                 .reset_command_buffer(self.command_buffer, vk::CommandBufferResetFlags::empty())?;
             self.record_commands(index, transforms)?;
 
+            // 4. Submit: wait for the image before writing colours,
+            // signal `render_finished` when done, then signal the fence
             let wait_semaphores = &[self.image_available];
             let wait_stages = &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
             let command_buffers = &[self.command_buffer];
@@ -201,6 +250,7 @@ impl Renderer {
             self.device
                 .queue_submit(self.graphics_queue, &[submit_info], self.in_flight)?;
 
+            // 5. Present: show the image once `render_finished` is signalled
             let swapchains = &[self.swapchain.handle];
             let image_indices = &[index as u32];
 
@@ -216,6 +266,9 @@ impl Renderer {
         Ok(())
     }
 
+    /// Records all the drawing commands for one frame into the command buffer.
+    ///
+    /// `i` = index of the swapchain image we draw into.
     fn record_commands(&self, i: usize, transforms: &[Mat4]) -> Result<()> {
         unsafe {
             self.device.begin_command_buffer(
@@ -223,11 +276,14 @@ impl Renderer {
                 &vk::CommandBufferBeginInfo::builder(),
             )?;
 
+            // The whole colour image (1 mip level, 1 layer)
             let range = vk::ImageSubresourceRange::builder()
                 .aspect_mask(vk::ImageAspectFlags::COLOR)
                 .level_count(1)
                 .layer_count(1);
 
+            // Barrier: switch the swapchain image to "ready to draw colours".
+            // UNDEFINED = we don't care about its old content, it gets cleared anyway
             let to_draw = vk::ImageMemoryBarrier::builder()
                 .old_layout(vk::ImageLayout::UNDEFINED)
                 .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
@@ -248,6 +304,7 @@ impl Renderer {
                 &[to_draw],
             );
 
+            // Same for the depth image: make it ready for depth testing
             let depth_range = vk::ImageSubresourceRange::builder()
                 .aspect_mask(vk::ImageAspectFlags::DEPTH)
                 .level_count(1)
@@ -275,6 +332,7 @@ impl Renderer {
                 &[depth_barrier],
             );
 
+            // Colour attachment: clear to black at the start, keep the result (it goes to the screen)
             let clear = vk::ClearValue {
                 color: vk::ClearColorValue {
                     float32: [0.0, 0.0, 0.0, 1.0],
@@ -289,6 +347,8 @@ impl Renderer {
                 .clear_value(clear);
             let attachments = &[attachment];
 
+            // Depth attachment: clear to 1.0 (= farthest), so anything drawn is closer.
+            // DONT_CARE: the depths are only needed during the frame, not after
             let depth_clear = vk::ClearValue {
                 depth_stencil: vk::ClearDepthStencilValue {
                     depth: 1.0,
@@ -303,12 +363,14 @@ impl Renderer {
                 .store_op(vk::AttachmentStoreOp::DONT_CARE)
                 .clear_value(depth_clear);
 
+            // Dynamic rendering: the images we draw into this time
             let rendering = vk::RenderingInfo::builder()
                 .render_area(vk::Rect2D::builder().extent(self.swapchain.extent))
                 .layer_count(1)
                 .color_attachments(attachments)
                 .depth_attachment(&depth_attachment);
 
+            // Start drawing, and set what every draw uses: pipeline, mesh buffers, viewport
             self.device
                 .cmd_begin_rendering(self.command_buffer, &rendering);
             self.device.cmd_bind_pipeline(
@@ -341,6 +403,7 @@ impl Renderer {
                 0,
                 &[vk::Rect2D::builder().extent(self.swapchain.extent)],
             );
+            // One draw per body: send its matrix (push constant), then draw the sphere
             for transform in transforms {
                 self.device.cmd_push_constants(
                     self.command_buffer,
@@ -354,6 +417,7 @@ impl Renderer {
             }
             self.device.cmd_end_rendering(self.command_buffer);
 
+            // Barrier: switch the image to "ready to be shown on screen"
             let to_present = vk::ImageMemoryBarrier::builder()
                 .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
                 .new_layout(vk::ImageLayout::PRESENT_SRC_KHR)
@@ -380,37 +444,46 @@ impl Renderer {
         Ok(())
     }
 
+    /// Width / height of the window, for the camera's projection.
     pub fn aspect(&self) -> f32 {
         self.swapchain.extent.width as f32 / self.swapchain.extent.height as f32
     }
 }
 
+/// Destroys every Vulkan object, in reverse order of creation (children before parents).
 impl Drop for Renderer {
     fn drop(&mut self) {
         unsafe {
+            // Never destroy something the GPU might still be using
             self.device.device_wait_idle().unwrap();
+            // Sync objects and commands
             self.device.destroy_semaphore(self.image_available, None);
             for &r_f in &self.render_finished {
                 self.device.destroy_semaphore(r_f, None);
             }
             self.device.destroy_fence(self.in_flight, None);
             self.device.destroy_command_pool(self.command_pool, None);
+            // Mesh buffers and their memory
             self.device.destroy_buffer(self.index_buffer, None);
             self.device.free_memory(self.index_memory, None);
             self.device.destroy_buffer(self.vertex_buffer, None);
             self.device.free_memory(self.vertex_memory, None);
+            // Pipeline
             self.device
                 .destroy_pipeline_layout(self.pipeline_layout, None);
             self.device.destroy_pipeline(self.pipeline, None);
+            // Images: views first, then images, then memory
             for &img_view in &self.swapchain.image_views {
                 self.device.destroy_image_view(img_view, None);
             }
             self.device.destroy_image_view(self.depth_view, None);
             self.device.destroy_image(self.depth_image, None);
             self.device.free_memory(self.depth_memory, None);
+            // Swapchain, then the device itself
             self.device
                 .destroy_swapchain_khr(self.swapchain.handle, None);
             self.device.destroy_device(None);
+            // Instance-level objects last
             self.instance.destroy_surface_khr(self.surface, None);
             if VALIDATION_ENABLED {
                 self.instance
@@ -421,6 +494,7 @@ impl Drop for Renderer {
     }
 }
 
+/// Asks Vulkan to send warnings and errors to `debug_callback`.
 fn create_messenger(instance: &Instance) -> Result<vk::DebugUtilsMessengerEXT> {
     let info = vk::DebugUtilsMessengerCreateInfoEXT::builder()
         .message_severity(
@@ -437,6 +511,7 @@ fn create_messenger(instance: &Instance) -> Result<vk::DebugUtilsMessengerEXT> {
     Ok(unsafe { instance.create_debug_utils_messenger_ext(&info, None)? })
 }
 
+/// Creates the instance: our connection to Vulkan, with the extensions and layers we need.
 fn create_instance(window: &Window, entry: &Entry) -> Result<Instance> {
     // 1. Who we are
     let application_info = vk::ApplicationInfo::builder()
@@ -469,6 +544,7 @@ fn create_instance(window: &Window, entry: &Entry) -> Result<Instance> {
         vk::InstanceCreateFlags::empty()
     };
 
+    // Validation layer: check it's installed before asking for it
     let available_layers = unsafe { entry.enumerate_instance_layer_properties()? }
         .iter()
         .map(|l| l.layer_name)
@@ -494,6 +570,9 @@ fn create_instance(window: &Window, entry: &Entry) -> Result<Instance> {
     Ok(unsafe { entry.create_instance(&info, None)? })
 }
 
+/// Called by the validation layer each time it has something to say. Prints it with a coloured marker.
+///
+/// `extern "system"`: uses the C calling convention, because Vulkan (written in C) calls it.
 extern "system" fn debug_callback(
     severity: vk::DebugUtilsMessageSeverityFlagsEXT,
     _type: vk::DebugUtilsMessageTypeFlagsEXT,
@@ -508,9 +587,13 @@ extern "system" fn debug_callback(
         println!("🟡 VULKAN WARNING: {message}");
     }
 
+    // FALSE = don't abort the Vulkan call that triggered the message
     vk::FALSE
 }
 
+/// Picks the best GPU that can both draw and show images in our window.
+///
+/// Returns the GPU and the queue family to use. "Best" = highest Vulkan version.
 fn pick_physical_device(
     instance: &Instance,
     surface: vk::SurfaceKHR,
@@ -528,6 +611,7 @@ fn pick_physical_device(
             vk::version_patch(props.api_version),
         );
 
+        // Find a queue family that can draw AND present to our window
         let families = unsafe { instance.get_physical_device_queue_family_properties(device) };
 
         let mut graphics = None;
@@ -543,6 +627,7 @@ fn pick_physical_device(
             }
         }
 
+        // Keep this GPU if it beats the best one so far
         if let Some(index) = graphics {
             let is_better = match best {
                 None => true,
@@ -562,17 +647,21 @@ fn pick_physical_device(
     }
 }
 
+/// Opens a session on the GPU (the logical device) with the extensions and features we need,
+/// and gets its queue.
 fn create_logical_device(
     instance: &Instance,
     physical_device: vk::PhysicalDevice,
     graphics_family: u32,
 ) -> Result<(Device, vk::Queue)> {
+    // One queue, from the graphics family
     let queue_priorities = &[1.0];
     let queue_info = vk::DeviceQueueCreateInfo::builder()
         .queue_family_index(graphics_family)
         .queue_priorities(queue_priorities);
     let queue_infos = &[queue_info];
 
+    // Extensions: swapchain (to show images), + portability subset on macOS if the driver has it
     let available_extensions =
         unsafe { instance.enumerate_device_extension_properties(physical_device, None)? }
             .iter()
@@ -584,14 +673,17 @@ fn create_logical_device(
         extensions.push(vk::KHR_PORTABILITY_SUBSET_EXTENSION.name.as_ptr());
     }
 
+    // Same validation layer as the instance (needed by older drivers)
     let layers = if VALIDATION_ENABLED {
         vec![VALIDATION_LAYER.as_ptr()]
     } else {
         Vec::new()
     };
 
-    let features = vk::PhysicalDeviceFeatures::builder();
+    // Optional GPU features. fill_mode_non_solid = wireframe (not supported by KosmicKrisp)
+    let features = vk::PhysicalDeviceFeatures::builder().fill_mode_non_solid(false);
 
+    // Vulkan 1.3 features: dynamic rendering (draw without render pass objects)
     let mut vulkan13 = vk::PhysicalDeviceVulkan13Features::builder().dynamic_rendering(true);
 
     let info = vk::DeviceCreateInfo::builder()
@@ -607,14 +699,21 @@ fn create_logical_device(
     Ok((device, queue))
 }
 
+/// The images shown in the window, plus what we need to know about them.
 struct Swapchain {
+    /// The swapchain itself
     handle: vk::SwapchainKHR,
+    /// Pixel format of the images
     format: vk::Format,
+    /// Size of the images, in pixels
     extent: vk::Extent2D,
+    /// The images, owned by the swapchain (we never destroy them ourselves)
     images: Vec<vk::Image>,
+    /// One view per image, to use it as a colour attachment
     image_views: Vec<vk::ImageView>,
 }
 
+/// Creates the swapchain for the window: picks its pixel format, present mode, size and image count.
 fn create_swapchain(
     window: &Window,
     instance: &Instance,
@@ -647,6 +746,7 @@ fn create_swapchain(
         .find(|m| *m == vk::PresentModeKHR::MAILBOX)
         .unwrap_or(vk::PresentModeKHR::FIFO);
 
+    // Size: usually the window's. u32::MAX means "you choose", so clamp the window size to what's allowed
     let extent = if capabilities.current_extent.width != u32::MAX {
         capabilities.current_extent
     } else {
@@ -663,6 +763,7 @@ fn create_swapchain(
         }
     };
 
+    // One more image than the minimum, so we rarely wait for the driver (max 0 = no maximum)
     let mut image_count = capabilities.min_image_count + 1;
     if capabilities.max_image_count != 0 && image_count > capabilities.max_image_count {
         image_count = capabilities.max_image_count;
@@ -670,21 +771,22 @@ fn create_swapchain(
 
     let info = vk::SwapchainCreateInfoKHR::builder()
         .surface(surface) // draw into this window
-        .min_image_count(image_count) // how many images (step 5)
-        .image_format(format.format) // pixel format (step 3)
+        .min_image_count(image_count) // how many images
+        .image_format(format.format) // pixel format
         .image_color_space(format.color_space)
-        .image_extent(extent) // size in pixels (step 4)
+        .image_extent(extent) // size in pixels
         .image_array_layers(1) // 1 layer (2 would be for VR)
         .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT) // we'll draw colours into them
         .image_sharing_mode(vk::SharingMode::EXCLUSIVE) // used by one queue family only
         .pre_transform(capabilities.current_transform) // no rotation/flip
         .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE) // window isn't see-through
-        .present_mode(present_mode) // MAILBOX or FIFO (step 3)
+        .present_mode(present_mode) // MAILBOX or FIFO
         .clipped(true); // skip pixels hidden by other windows
 
     let handle = unsafe { device.create_swapchain_khr(&info, None)? };
     let images = unsafe { device.get_swapchain_images_khr(handle)? };
 
+    // One view per image: how the pipeline will see it
     let image_views = images
         .iter()
         .map(|&image| {
@@ -712,7 +814,9 @@ fn create_swapchain(
     })
 }
 
+/// Wraps compiled SPIR-V bytes into a shader module Vulkan can use.
 fn create_shader_module(device: &Device, bytes: &[u8]) -> Result<vk::ShaderModule> {
+    // Copies the bytes into an aligned buffer: SPIR-V is read as 4-byte words
     let bytecode = vulkanalia::bytecode::Bytecode::new(bytes)?;
     let info = vk::ShaderModuleCreateInfo::builder()
         .code_size(bytecode.code_size())
@@ -721,12 +825,16 @@ fn create_shader_module(device: &Device, bytes: &[u8]) -> Result<vk::ShaderModul
     Ok(unsafe { device.create_shader_module(&info, None)? })
 }
 
+/// Builds the graphics pipeline: every drawing setting, baked once for speed.
+///
+/// Returns the layout (what data the shaders receive) and the pipeline itself.
 fn create_pipeline(
     device: &Device,
     format: vk::Format,
     vert: vk::ShaderModule,
     frag: vk::ShaderModule,
 ) -> Result<(vk::PipelineLayout, vk::Pipeline)> {
+    // The 2 shaders, both starting at their `main` function
     let stages = &[
         vk::PipelineShaderStageCreateInfo::builder()
             .stage(vk::ShaderStageFlags::VERTEX)
@@ -738,15 +846,18 @@ fn create_pipeline(
             .name(b"main\0"),
     ];
 
+    // Vertex format: comes from `Vertex` in mesh.rs
     let bindings = &[Vertex::binding_description()];
     let attributes = Vertex::attribute_descriptions();
     let vertex_input = vk::PipelineVertexInputStateCreateInfo::builder()
         .vertex_binding_descriptions(bindings)
         .vertex_attribute_descriptions(&attributes);
 
+    // Every 3 indices = 1 triangle
     let input_assembly = vk::PipelineInputAssemblyStateCreateInfo::builder()
         .topology(vk::PrimitiveTopology::TRIANGLE_LIST);
 
+    // 1 viewport and 1 scissor, set each frame (see the dynamic states below)
     let viewport_state = vk::PipelineViewportStateCreateInfo::builder()
         .viewport_count(1)
         .scissor_count(1);
@@ -758,14 +869,17 @@ fn create_pipeline(
         .cull_mode(vk::CullModeFlags::NONE)
         .front_face(vk::FrontFace::CLOCKWISE);
 
+    // Depth test: keep a pixel only if it's closer (LESS) than what's stored, then store its depth
     let depth_stencil = vk::PipelineDepthStencilStateCreateInfo::builder()
         .depth_test_enable(true)
         .depth_write_enable(true)
         .depth_compare_op(vk::CompareOp::LESS);
 
+    // No anti-aliasing (1 sample per pixel)
     let multisample = vk::PipelineMultisampleStateCreateInfo::builder()
         .rasterization_samples(vk::SampleCountFlags::_1);
 
+    // No blending: new colours replace the old ones
     let blend_attachment = vk::PipelineColorBlendAttachmentState::builder()
         .color_write_mask(vk::ColorComponentFlags::all())
         .blend_enable(false);
@@ -773,14 +887,17 @@ fn create_pipeline(
     let color_blend =
         vk::PipelineColorBlendStateCreateInfo::builder().attachments(blend_attachments);
 
+    // Viewport and scissor are set when drawing, so a window resize doesn't need a new pipeline
     let dynamic_states = &[vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
     let dynamic = vk::PipelineDynamicStateCreateInfo::builder().dynamic_states(dynamic_states);
 
+    // Dynamic rendering: the formats of the images this pipeline will draw into
     let formats = &[format];
     let mut rendering = vk::PipelineRenderingCreateInfo::builder()
         .color_attachment_formats(formats)
         .depth_attachment_format(DEPTH_FORMAT);
 
+    // Push constant: one 4×4 matrix (64 bytes) for the vertex shader
     let push = vk::PushConstantRange::builder()
         .stage_flags(vk::ShaderStageFlags::VERTEX)
         .offset(0)
@@ -816,6 +933,10 @@ fn create_pipeline(
     Ok((layout, pipeline))
 }
 
+/// Creates a buffer and fills it with `data` (any `Copy` type: vertices, indices...).
+///
+/// Uses memory the CPU can write into directly (HOST_VISIBLE | HOST_COHERENT). Simple, but not the
+/// fastest for the GPU: for big meshes, a copy to DEVICE_LOCAL memory ("staging buffer") is better.
 fn create_buffer<T: Copy>(
     instance: &Instance,
     device: &Device,
@@ -832,13 +953,16 @@ fn create_buffer<T: Copy>(
 
     let buffer = unsafe { device.create_buffer(&buffer_info, None)? };
 
+    // How much memory it needs, and which memory types are allowed
     let requirements = unsafe { device.get_buffer_memory_requirements(buffer) };
 
     let memory_properties =
         unsafe { instance.get_physical_device_memory_properties(physical_device) };
 
+    // Memory the CPU can write to, with no manual flushing
     let wanted = vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT;
 
+    // Find a memory type that is allowed (bit i is set) AND has the flags we want
     let memory_type_index = (0..memory_properties.memory_type_count)
         .find(|&i| {
             let allowed = (requirements.memory_type_bits & (1 << i)) != 0;
@@ -855,6 +979,7 @@ fn create_buffer<T: Copy>(
 
     let memory = unsafe { device.allocate_memory(&info, None)? };
 
+    // Attach the memory, then copy the data into it through a CPU pointer
     unsafe {
         device.bind_buffer_memory(buffer, memory, 0)?;
         let ptr = device.map_memory(memory, 0, size, vk::MemoryMapFlags::empty())?;
@@ -865,6 +990,7 @@ fn create_buffer<T: Copy>(
     Ok((buffer, memory))
 }
 
+/// Creates the depth image, its GPU-only memory and its view. Same size as the swapchain images.
 fn create_depth_image(
     instance: &Instance,
     device: &Device,
@@ -891,11 +1017,13 @@ fn create_depth_image(
 
     let requirements = unsafe { device.get_image_memory_requirements(image) };
 
+    // GPU-only memory: the fastest, and the CPU never needs to touch the depths
     let wanted = vk::MemoryPropertyFlags::DEVICE_LOCAL;
 
     let memory_properties =
         unsafe { instance.get_physical_device_memory_properties(physical_device) };
 
+    // Same search as in `create_buffer`
     let memory_type_index = (0..memory_properties.memory_type_count)
         .find(|&i| {
             let allowed = (requirements.memory_type_bits & (1 << i)) != 0;
@@ -913,6 +1041,7 @@ fn create_depth_image(
 
     unsafe { device.bind_image_memory(image, memory, 0)? };
 
+    // A view on the depth part of the image
     let range = vk::ImageSubresourceRange::builder()
         .aspect_mask(vk::ImageAspectFlags::DEPTH) // ← DEPTH, not COLOR
         .base_mip_level(0)

@@ -1,14 +1,23 @@
+//! Geometry: the vertex format shared with the shaders, and mesh generators.
+
 use std::f32::consts::PI;
 use vulkanalia::prelude::v1_3::*;
 
+/// One point of a mesh, as the GPU receives it.
+///
+/// `#[repr(C)]` keeps the fields in this exact order in memory (Rust may reorder them otherwise),
+/// so the layout matches what we describe to Vulkan below.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct Vertex {
+    /// Position in model space (x, y, z) → shader `location = 0`
     pub pos: [f32; 3],
+    /// Colour (r, g, b), each 0.0–1.0 → shader `location = 1`
     pub colour: [f32; 3],
 }
 
 impl Vertex {
+    /// How vertices are laid out in the vertex buffer: one `Vertex` after another.
     pub fn binding_description() -> vk::VertexInputBindingDescription {
         vk::VertexInputBindingDescription::builder()
             .binding(0)
@@ -17,8 +26,9 @@ impl Vertex {
             .build()
     }
 
+    /// Where each field of a `Vertex` is, so the vertex shader can read it.
     pub fn attribute_descriptions() -> [vk::VertexInputAttributeDescription; 2] {
-        // Field 1: the position → shader location 0, 2 floats, starts at byte 0
+        // Field 1: the position → shader location 0, 3 floats, starts at byte 0
         let pos = vk::VertexInputAttributeDescription::builder()
             .binding(0)
             .location(0)
@@ -38,6 +48,7 @@ impl Vertex {
     }
 }
 
+/// Leftover from the square lesson (not used anymore), kept as a tiny mesh example.
 pub const SQUARE: [Vertex; 4] = [
     Vertex {
         pos: [-0.05, -0.05, 0.0],
@@ -56,14 +67,20 @@ pub const SQUARE: [Vertex; 4] = [
         colour: [0.0, 1.0, 0.0],
     },
 ];
+/// The square's 2 triangles: 0-1-2 and 0-2-3, sharing the diagonal 0–2.
 pub const SQUARE_INDICES: [u16; 6] = [0, 1, 2, 0, 2, 3];
 
+/// Generates a UV sphere: like a globe, rings of latitude × segments of longitude.
+///
+/// Returns the vertices and the indices that link them into triangles.
+/// `_colour` is not used yet: for now the colour comes from the position.
 pub fn uv_sphere(
     segments: u32,
     rings: u32,
     radius: f32,
     _colour: [f32; 3],
 ) -> (Vec<Vertex>, Vec<u16>) {
+    // 1. Vertices: one per (ring, segment) crossing
     let mut vertices = Vec::new();
 
     for ring in 0..=rings {
@@ -90,6 +107,7 @@ pub fn uv_sphere(
         }
     }
 
+    // 2. Indices: each little square of the grid = 2 triangles
     let mut indices = Vec::new();
     let row = segments + 1; // number of points on each ring
 
