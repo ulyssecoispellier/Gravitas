@@ -6,6 +6,7 @@
 layout(location = 0) in vec3 in_pos;
 layout(location = 1) in vec3 in_colour;
 layout(location = 2) in vec3 in_normal;
+layout(location = 3) in vec2 in_uv;
 
 // The body's transform (projection x view x model), sent with a push constant
 layout(push_constant) uniform Push {

@@ -16,6 +16,8 @@ pub struct Vertex {
     pub colour: [f32; 3],
     /// Direction the surface faces at this point, length 1 → shader `location = 2`
     pub normal: [f32; 3],
+    /// Texture coordinates (u, v), each 0.0–1.0: which point of the image this vertex shows → shader `location = 3`
+    pub uv: [f32; 2],
 }
 
 impl Vertex {
@@ -29,7 +31,7 @@ impl Vertex {
     }
 
     /// Where each field of a `Vertex` is, so the vertex shader can read it.
-    pub fn attribute_descriptions() -> [vk::VertexInputAttributeDescription; 3] {
+    pub fn attribute_descriptions() -> [vk::VertexInputAttributeDescription; 4] {
         // Field 1: the position → shader location 0, 3 floats, starts at byte 0
         let pos = vk::VertexInputAttributeDescription::builder()
             .binding(0)
@@ -54,7 +56,15 @@ impl Vertex {
             .offset(2 * std::mem::size_of::<[f32; 3]>() as u32)
             .build();
 
-        [pos, colour, normal]
+        // Field 4: the UV → shader location 3, 2 floats, starts right after normal
+        let uv = vk::VertexInputAttributeDescription::builder()
+            .binding(0)
+            .location(3)
+            .format(vk::Format::R32G32_SFLOAT)
+            .offset(3 * std::mem::size_of::<[f32; 3]>() as u32)
+            .build();
+
+        [pos, colour, normal, uv]
     }
 }
 
@@ -92,6 +102,8 @@ pub fn uv_sphere(
                     z / radius * 0.5 + 0.5,
                 ],
                 normal: [x / radius, y / radius, z / radius],
+                // u goes around the sphere, v from the north pole (0) to the south pole (1)
+                uv: [seg as f32 / segments as f32, ring as f32 / rings as f32],
             });
         }
     }
