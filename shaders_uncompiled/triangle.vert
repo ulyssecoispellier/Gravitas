@@ -14,6 +14,7 @@ layout(push_constant) uniform Push {
     vec4 body_pos;
     vec4 light_pos;
     vec4 info;
+    vec4 colour;
 } push;
 
 // Outputs to the fragment shader (blended across the triangle)

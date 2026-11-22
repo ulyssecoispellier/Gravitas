@@ -46,13 +46,16 @@ const VALIDATION_LAYER: vk::ExtensionName =
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct PushConstants {
-    /// Where to draw it on screen: projection × view × model (what you send today)
+    /// projection × view × model
     pub transform: [f32; 16],
-    /// Where this body is in space (x, y, z), + 4th number: 1.0 if the body glows (the star), else 0.0
+    /// Where this body is in space (x, y, z), w = unused
     pub body_pos: [f32; 4],
-    /// Where the star is (x, y, z), + an unused 4th number (padding)
+    /// Where the Sun is (x, y, z), w = unused
     pub light_pos: [f32; 4],
+    /// x = radius, y = glow flag, z = texture flag, w = unused
     pub info: [f32; 4],
+    /// Base colour (r, g, b), w = unused
+    pub colour: [f32; 4],
 }
 
 /// Owns every Vulkan object. Created once by `new`, cleaned up by `Drop`.

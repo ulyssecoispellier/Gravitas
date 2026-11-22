@@ -14,14 +14,86 @@ use crate::renderer::{PushConstants, Renderer};
 
 const DT: f64 = 0.001; // size of one physics step, in seconds
 
-// The star system (G = 1, so the units are arbitrary)
-const STAR_MASS: f64 = 1.0;
-const ROCKY_DISTANCE: f64 = 1.2; // from the star
-const GIANT_DISTANCE: f64 = 2.5; // from the star
-const GIANT_MASS: f64 = 0.05;
-// From the giant. Must stay well inside its Hill sphere (≈ 0.64 here), or the star steals the moon
-const MOON_DISTANCE: f64 = 0.28;
-const MOON_TILT: f64 = 30.0 * std::f64::consts::PI / 180.0; // 30°, in radians
+// The Solar System (G = 1, Sun mass = 1).
+// Masses: real, relative to the Sun. Distances: compressed (2·√AU) so the outer planets fit on screen.
+// Radii: exaggerated for visibility (real ones would be invisible dots)
+const SUN_MASS: f64 = 1.0;
+const SUN_RADIUS: f64 = 0.5;
+const SUN_COLOUR: [f32; 3] = [1.0, 0.85, 0.4];
+
+/// One planet's starting data.
+struct PlanetData {
+    /// Distance from the Sun
+    distance: f64,
+    /// Mass, relative to the Sun
+    mass: f64,
+    /// Radius on screen
+    radius: f64,
+    /// Base colour (r, g, b)
+    colour: [f32; 3],
+}
+
+const PLANETS: [PlanetData; 8] = [
+    // Mercury
+    PlanetData {
+        distance: 1.25,
+        mass: 1.66e-7,
+        radius: 0.035,
+        colour: [0.6, 0.58, 0.55],
+    },
+    // Venus
+    PlanetData {
+        distance: 1.70,
+        mass: 2.45e-6,
+        radius: 0.075,
+        colour: [0.9, 0.8, 0.55],
+    },
+    // Earth (textured)
+    PlanetData {
+        distance: 2.00,
+        mass: 3.00e-6,
+        radius: 0.08,
+        colour: [0.3, 0.5, 0.9],
+    },
+    // Mars
+    PlanetData {
+        distance: 2.47,
+        mass: 3.23e-7,
+        radius: 0.05,
+        colour: [0.8, 0.4, 0.25],
+    },
+    // Jupiter
+    PlanetData {
+        distance: 4.56,
+        mass: 9.55e-4,
+        radius: 0.25,
+        colour: [0.85, 0.7, 0.5],
+    },
+    // Saturn
+    PlanetData {
+        distance: 6.19,
+        mass: 2.86e-4,
+        radius: 0.21,
+        colour: [0.9, 0.8, 0.55],
+    },
+    // Uranus
+    PlanetData {
+        distance: 8.76,
+        mass: 4.37e-5,
+        radius: 0.12,
+        colour: [0.6, 0.85, 0.9],
+    },
+    // Neptune
+    PlanetData {
+        distance: 10.97,
+        mass: 5.15e-5,
+        radius: 0.12,
+        colour: [0.3, 0.45, 0.95],
+    },
+];
+
+/// Index of the textured body in `bodies` (Sun = 0, Mercury = 1, Venus = 2, Earth = 3)
+const EARTH: usize = 3;
 
 /// Everything the program keeps between two events.
 ///
@@ -32,8 +104,10 @@ pub struct App {
     renderer: Option<Renderer>,
     /// The OS window. `None` until `resumed`
     window: Option<Window>,
-    /// All the bodies of the simulation
+    /// All the bodies of the simulation (Sun first)
     bodies: Vec<Body>,
+    /// Base colour of each body, same order as `bodies`
+    colours: Vec<[f32; 3]>,
     /// Number of frames drawn so far
     frame: u64,
     /// When the previous frame started, to measure how much time passed
@@ -151,8 +225,14 @@ impl ApplicationHandler for App {
                                     body.radius() as f32,
                                     // Glow flag (star)
                                     if i == 0 { 1.0 } else { 0.0 },
-                                    // Texture flag (rocky planet)
-                                    if i == 1 { 1.0 } else { 0.0 },
+                                    // Texture flag (Earth)
+                                    if i == EARTH { 1.0 } else { 0.0 },
+                                    0.0,
+                                ],
+                                colour: [
+                                    self.colours[i][0],
+                                    self.colours[i][1],
+                                    self.colours[i][2],
                                     0.0,
                                 ],
                             }
@@ -215,52 +295,30 @@ impl App {
     pub fn new() -> Self {
         Self {
             window: None,
-            // A heavy star at the centre, 2 planets on circular orbits, and a moon around the gas giant.
-            // The star must stay first: body 0 is the light source.
-            bodies: vec![
-                // Star
-                Body::new(DVec3::ZERO, DVec3::ZERO, STAR_MASS, 0.4),
-                // Rocky (telluric) planet
-                Body::new(
-                    DVec3::new(ROCKY_DISTANCE, 0.0, 0.0),
-                    DVec3::new(0.0, orbit_speed(STAR_MASS, ROCKY_DISTANCE), 0.0),
-                    0.00001,
-                    0.15,
-                ),
-                // Gas giant
-                Body::new(
-                    DVec3::new(GIANT_DISTANCE, 0.0, 0.0),
-                    DVec3::new(0.0, orbit_speed(STAR_MASS, GIANT_DISTANCE), 0.0),
-                    GIANT_MASS,
-                    0.22,
-                ),
-                // Gas giant's moon: next to the giant, moving with it + orbiting it on a tilted plane
-                Body::new(
-                    DVec3::new(GIANT_DISTANCE + MOON_DISTANCE, 0.0, 0.0),
-                    {
-                        let moon_speed = orbit_speed(GIANT_MASS, MOON_DISTANCE);
-
-                        // Its own speed is split between y and z by the tilt, so the orbit plane leans
-                        DVec3::new(
-                            0.0,
-                            orbit_speed(STAR_MASS, GIANT_DISTANCE) + moon_speed * MOON_TILT.cos(),
-                            moon_speed * MOON_TILT.sin(),
-                        )
-                    },
-                    0.000001,
-                    0.04,
-                ),
-            ],
+            // The Sun first (body 0 = the light source), then each planet on a circular orbit
+            bodies: std::iter::once(Body::new(DVec3::ZERO, DVec3::ZERO, SUN_MASS, SUN_RADIUS))
+                .chain(PLANETS.iter().map(|p| {
+                    Body::new(
+                        DVec3::new(p.distance, 0.0, 0.0),
+                        DVec3::new(0.0, orbit_speed(SUN_MASS, p.distance), 0.0),
+                        p.mass,
+                        p.radius,
+                    )
+                }))
+                .collect(),
+            colours: std::iter::once(SUN_COLOUR)
+                .chain(PLANETS.iter().map(|p| p.colour))
+                .collect(),
             frame: 0,
             last_frame: Instant::now(),
             accumulator: 0.0,
             renderer: None,
-            // Looking at the star from 6 units away, slightly from above
+            // Looking at the Sun from 14 units away, slightly from above
             camera: Camera::new(
                 Vec3::new(0.0, 0.0, 0.0),
                 -std::f32::consts::FRAC_PI_2,
                 (3.0f32 / 5.0).asin(),
-                6.0,
+                14.0,
                 45f32.to_radians(),
             ),
             dragging: false,

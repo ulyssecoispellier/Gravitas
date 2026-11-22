@@ -17,6 +17,7 @@ layout(push_constant) uniform Push {
     vec4 body_pos;
     vec4 light_pos;
     vec4 info;
+    vec4 colour;
 } push;
 
 // Rocky planet texture (set 0, binding 0)
@@ -33,8 +34,8 @@ void main() {
     // A glowing body (the star, w = 1) is fully bright everywhere
     brightness = max(brightness, push.info.y);
 
-    // Base colour: texture if info.z = 1, else vertex colour
-    vec3 base = mix(frag_color, texture(planet_texture, frag_uv).rgb, push.info.z);
+    // Base colour: texture if info.z = 1, else the body's colour
+    vec3 base = mix(push.colour.rgb, texture(planet_texture, frag_uv).rgb, push.info.z);
 
     out_color = vec4(base * brightness, 1.0);
 }
