@@ -135,10 +135,14 @@ impl Renderer {
         };
 
         // 6. The shaders (compiled to SPIR-V by build.rs, embedded in the program) and the pipeline
-        let vert_module =
-            create_shader_module(&device, include_bytes!("../shaders/triangle.vert.spv"))?;
-        let frag_module =
-            create_shader_module(&device, include_bytes!("../shaders/triangle.frag.spv"))?;
+        let vert_module = create_shader_module(
+            &device,
+            include_bytes!("../shaders/triangle.vert.spv"),
+        )?;
+        let frag_module = create_shader_module(
+            &device,
+            include_bytes!("../shaders/triangle.frag.spv"),
+        )?;
 
         let (pipeline_layout, pipeline) =
             create_pipeline(&device, swapchain.format, vert_module, frag_module)?;
