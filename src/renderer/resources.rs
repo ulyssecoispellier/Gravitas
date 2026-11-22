@@ -132,3 +132,46 @@ pub(super) fn create_image(
 
     Ok((image, memory, view))
 }
+
+/// Copies `buffer` into `image` on the GPU, and prepares the image for shaders to read.
+pub(super) fn copy_buffer_to_image(
+    device: &Device,
+    queue: vk::Queue,
+    pool: vk::CommandPool,
+    buffer: vk::Buffer,
+    image: vk::Image,
+    width: u32,
+    height: u32,
+) -> Result<()> {
+    unsafe {
+        // 1. Allocate a short-lived command buffer
+        let alloc_info = vk::CommandBufferAllocateInfo::builder()
+            .command_pool(pool)
+            .level(vk::CommandBufferLevel::PRIMARY)
+            .command_buffer_count(1);
+        let cmd = device.allocate_command_buffers(&alloc_info)?[0];
+
+        // 2. Start recording. ONE_TIME_SUBMIT: it's submitted once, then thrown away
+        let begin_info = vk::CommandBufferBeginInfo::builder()
+            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+        device.begin_command_buffer(cmd, &begin_info)?;
+
+        // TODO: barriers + copy (next step)
+
+        // 3. Stop recording
+        device.end_command_buffer(cmd)?;
+
+        // 4. Submit: no semaphores, no fence (step 5 waits instead)
+        let command_buffers = &[cmd];
+        let submit_info = vk::SubmitInfo::builder().command_buffers(command_buffers);
+        device.queue_submit(queue, &[submit_info], vk::Fence::null())?;
+
+        // 5. The CPU waits until the GPU has finished the copy
+        device.queue_wait_idle(queue)?;
+
+        // 6. The command buffer is no longer needed
+        device.free_command_buffers(pool, command_buffers);
+    }
+
+    Ok(())
+}

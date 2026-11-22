@@ -197,6 +197,14 @@ impl Renderer {
             vk::ImageAspectFlags::COLOR,
         )?;
 
+        let (staging_buffer, staging_memory) = create_buffer(
+            &instance,
+            &device,
+            physical_device,
+            vk::BufferUsageFlags::TRANSFER_SRC, // "the GPU will copy FROM this buffer"
+            &pixels,
+        )?;
+
         // 8. A unit sphere (radius 1), uploaded to the GPU. Drawn once per body, scaled to its radius
         let (sphere_vertices, sphere_indices) = uv_sphere(128, 64, 1.0, [0.0, 0.0, 0.0]);
         let (vertex_buffer, vertex_memory) = create_buffer(
