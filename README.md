@@ -32,14 +32,14 @@ It is also a learning project: the goal is to understand Rust and Vulkan from th
 | Transform matrices + orthographic camera (correct aspect ratio) | ✅ Done |
 | 3D perspective camera (`look_at`) | ✅ Done |
 | Spheres (3D vertices, generated UV-sphere mesh) | ✅ Done |
-| Depth buffer | 🚧 Next |
-| Rocky planet (mesh, textures, depth buffer) | ⬜ Planned |
+| Depth buffer (spheres correctly hide each other) | ✅ Done |
+| Rocky planet (mesh, textures) | ⬜ Planned |
 | Orbit camera (mouse) | ⬜ Planned |
 | Star + gas giant, ray-traced in shaders | ⬜ Planned |
 | Atmospheric scattering | ⬜ Planned |
 | Bloom + HDR post-processing | ⬜ Planned |
 
-Right now, running the program opens a window, runs the physics in real time, and shows the two bodies orbiting each other as coloured spheres (a UV sphere generated in Rust) (one draw call per body; each body's model × view × projection matrix (perspective camera looking at the orbit from an angle) is sent with push constants, so the orbit keeps its true shape whatever the window size). It renders every frame with Vulkan: the window is cleared to a solid colour and a colour-blended square, whose 4 vertices and 6 indices come from Rust through vertex and index buffers, is drawn by the GPU and moved every frame with push constants, using a vertex shader and a fragment shader. Under the hood, it sets up Vulkan: it connects Vulkan to the window (surface), lists the available GPUs, picks the best one that can draw and present to the window, opens a logical device on it, creates a swapchain (the images that will be shown in the window), and prepares a command buffer and the synchronization objects needed to draw a frame. Each frame, it waits for the previous one, takes a swapchain image, records the commands that clear it (dynamic rendering, Vulkan 1.3), submits them and presents the image.
+Right now, running the program opens a window, runs the physics in real time, and shows the two bodies orbiting each other as solid coloured spheres. Each sphere is a UV sphere generated in Rust and uploaded to the GPU through vertex and index buffers. It is drawn once per body, and each body's model × view × projection matrix (a perspective camera looking at the orbit from an angle) is sent with push constants. A depth buffer makes the closest surface win, so the spheres hide each other correctly. Under the hood, it sets up Vulkan: it connects Vulkan to the window (surface), picks the best GPU that can draw and present, opens a logical device, creates a swapchain, and prepares command buffers and synchronization objects. Each frame, it waits for the previous one, takes a swapchain image, records the drawing commands (dynamic rendering, Vulkan 1.3), submits them and presents the image.
 
 ---
 

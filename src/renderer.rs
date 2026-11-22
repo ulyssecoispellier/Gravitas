@@ -13,9 +13,10 @@ use vulkanalia::vk::{
 use vulkanalia::window as vk_window;
 use winit::window::Window;
 
-use crate::mesh::{SQUARE, SQUARE_INDICES, Vertex, uv_sphere};
+use crate::mesh::{Vertex, uv_sphere};
 
 const PORTABILITY_MACOS_VERSION: Version = Version::new(1, 3, 216);
+const DEPTH_FORMAT: vk::Format = vk::Format::D32_SFLOAT;
 const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
 const VALIDATION_LAYER: vk::ExtensionName =
     vk::ExtensionName::from_bytes(b"VK_LAYER_KHRONOS_validation");
@@ -42,6 +43,9 @@ pub struct Renderer {
     index_buffer: vk::Buffer,
     index_memory: vk::DeviceMemory,
     index_count: u32,
+    depth_image: vk::Image,
+    depth_memory: vk::DeviceMemory,
+    depth_view: vk::ImageView,
 }
 
 impl Renderer {
@@ -64,6 +68,9 @@ impl Renderer {
 
         // 3. The images that will be shown in the window
         let swapchain = create_swapchain(window, &instance, &device, physical_device, surface)?;
+
+        let (depth_image, depth_memory, depth_view) =
+            create_depth_image(&instance, &device, physical_device, swapchain.extent)?;
 
         // 4. Where we record drawing commands
         let pool_info = vk::CommandPoolCreateInfo::builder()
@@ -98,7 +105,7 @@ impl Renderer {
         let (pipeline_layout, pipeline) =
             create_pipeline(&device, swapchain.format, vert_module, frag_module)?;
 
-        let (sphere_vertices, sphere_indices) = uv_sphere(32, 16, 0.1, [0.0, 0.0, 0.0]);
+        let (sphere_vertices, sphere_indices) = uv_sphere(32, 16, 0.7, [0.0, 0.0, 0.0]);
         let (vertex_buffer, vertex_memory) = create_buffer(
             &instance,
             &device,
@@ -152,6 +159,9 @@ impl Renderer {
             index_buffer,
             index_memory,
             index_count,
+            depth_image,
+            depth_memory,
+            depth_view,
         })
     }
 }
@@ -238,6 +248,33 @@ impl Renderer {
                 &[to_draw],
             );
 
+            let depth_range = vk::ImageSubresourceRange::builder()
+                .aspect_mask(vk::ImageAspectFlags::DEPTH)
+                .level_count(1)
+                .layer_count(1);
+
+            let depth_barrier = vk::ImageMemoryBarrier::builder()
+                .old_layout(vk::ImageLayout::UNDEFINED)
+                .new_layout(vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL)
+                .src_access_mask(vk::AccessFlags::empty())
+                .dst_access_mask(vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .image(self.depth_image)
+                .subresource_range(depth_range);
+
+            self.device.cmd_pipeline_barrier(
+                self.command_buffer,
+                vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS
+                    | vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
+                vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS
+                    | vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
+                vk::DependencyFlags::empty(),
+                &[] as &[vk::MemoryBarrier],
+                &[] as &[vk::BufferMemoryBarrier],
+                &[depth_barrier],
+            );
+
             let clear = vk::ClearValue {
                 color: vk::ClearColorValue {
                     float32: [0.0, 0.0, 0.0, 1.0],
@@ -252,10 +289,25 @@ impl Renderer {
                 .clear_value(clear);
             let attachments = &[attachment];
 
+            let depth_clear = vk::ClearValue {
+                depth_stencil: vk::ClearDepthStencilValue {
+                    depth: 1.0,
+                    stencil: 0,
+                },
+            };
+
+            let depth_attachment = vk::RenderingAttachmentInfo::builder()
+                .image_view(self.depth_view)
+                .image_layout(vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL)
+                .load_op(vk::AttachmentLoadOp::CLEAR)
+                .store_op(vk::AttachmentStoreOp::DONT_CARE)
+                .clear_value(depth_clear);
+
             let rendering = vk::RenderingInfo::builder()
                 .render_area(vk::Rect2D::builder().extent(self.swapchain.extent))
                 .layer_count(1)
-                .color_attachments(attachments);
+                .color_attachments(attachments)
+                .depth_attachment(&depth_attachment);
 
             self.device
                 .cmd_begin_rendering(self.command_buffer, &rendering);
@@ -353,6 +405,9 @@ impl Drop for Renderer {
             for &img_view in &self.swapchain.image_views {
                 self.device.destroy_image_view(img_view, None);
             }
+            self.device.destroy_image_view(self.depth_view, None);
+            self.device.destroy_image(self.depth_image, None);
+            self.device.free_memory(self.depth_memory, None);
             self.device
                 .destroy_swapchain_khr(self.swapchain.handle, None);
             self.device.destroy_device(None);
@@ -703,6 +758,11 @@ fn create_pipeline(
         .cull_mode(vk::CullModeFlags::NONE)
         .front_face(vk::FrontFace::CLOCKWISE);
 
+    let depth_stencil = vk::PipelineDepthStencilStateCreateInfo::builder()
+        .depth_test_enable(true)
+        .depth_write_enable(true)
+        .depth_compare_op(vk::CompareOp::LESS);
+
     let multisample = vk::PipelineMultisampleStateCreateInfo::builder()
         .rasterization_samples(vk::SampleCountFlags::_1);
 
@@ -717,8 +777,9 @@ fn create_pipeline(
     let dynamic = vk::PipelineDynamicStateCreateInfo::builder().dynamic_states(dynamic_states);
 
     let formats = &[format];
-    let mut rendering =
-        vk::PipelineRenderingCreateInfo::builder().color_attachment_formats(formats);
+    let mut rendering = vk::PipelineRenderingCreateInfo::builder()
+        .color_attachment_formats(formats)
+        .depth_attachment_format(DEPTH_FORMAT);
 
     let push = vk::PushConstantRange::builder()
         .stage_flags(vk::ShaderStageFlags::VERTEX)
@@ -740,6 +801,7 @@ fn create_pipeline(
         .input_assembly_state(&input_assembly)
         .viewport_state(&viewport_state)
         .rasterization_state(&rasterization)
+        .depth_stencil_state(&depth_stencil)
         .multisample_state(&multisample)
         .color_blend_state(&color_blend)
         .dynamic_state(&dynamic)
@@ -801,4 +863,68 @@ fn create_buffer<T: Copy>(
     };
 
     Ok((buffer, memory))
+}
+
+fn create_depth_image(
+    instance: &Instance,
+    device: &Device,
+    physical_device: vk::PhysicalDevice,
+    extent: vk::Extent2D,
+) -> Result<(vk::Image, vk::DeviceMemory, vk::ImageView)> {
+    let info = vk::ImageCreateInfo::builder()
+        .image_type(vk::ImageType::_2D)
+        .extent(vk::Extent3D {
+            width: extent.width,
+            height: extent.height,
+            depth: 1,
+        })
+        .mip_levels(1)
+        .array_layers(1)
+        .format(DEPTH_FORMAT)
+        .tiling(vk::ImageTiling::OPTIMAL)
+        .initial_layout(vk::ImageLayout::UNDEFINED)
+        .usage(vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT)
+        .samples(vk::SampleCountFlags::_1)
+        .sharing_mode(vk::SharingMode::EXCLUSIVE);
+
+    let image = unsafe { device.create_image(&info, None)? };
+
+    let requirements = unsafe { device.get_image_memory_requirements(image) };
+
+    let wanted = vk::MemoryPropertyFlags::DEVICE_LOCAL;
+
+    let memory_properties =
+        unsafe { instance.get_physical_device_memory_properties(physical_device) };
+
+    let memory_type_index = (0..memory_properties.memory_type_count)
+        .find(|&i| {
+            let allowed = (requirements.memory_type_bits & (1 << i)) != 0;
+            let has_flags = memory_properties.memory_types[i as usize]
+                .property_flags
+                .contains(wanted);
+            allowed && has_flags
+        })
+        .ok_or_else(|| anyhow!("no suitable memory type"))?;
+
+    let alloc_info = vk::MemoryAllocateInfo::builder()
+        .allocation_size(requirements.size)
+        .memory_type_index(memory_type_index);
+    let memory = unsafe { device.allocate_memory(&alloc_info, None)? };
+
+    unsafe { device.bind_image_memory(image, memory, 0)? };
+
+    let range = vk::ImageSubresourceRange::builder()
+        .aspect_mask(vk::ImageAspectFlags::DEPTH) // ← DEPTH, not COLOR
+        .base_mip_level(0)
+        .level_count(1)
+        .base_array_layer(0)
+        .layer_count(1);
+    let view_info = vk::ImageViewCreateInfo::builder()
+        .image(image)
+        .view_type(vk::ImageViewType::_2D)
+        .format(DEPTH_FORMAT) // ← the depth format
+        .subresource_range(range);
+    let view = unsafe { device.create_image_view(&view_info, None)? };
+
+    Ok((image, memory, view))
 }
