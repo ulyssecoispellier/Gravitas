@@ -14,6 +14,8 @@ pub struct Vertex {
     pub pos: [f32; 3],
     /// Colour (r, g, b), each 0.0–1.0 → shader `location = 1`
     pub colour: [f32; 3],
+    /// Direction the surface faces at this point, length 1 → shader `location = 2`
+    pub normal: [f32; 3],
 }
 
 impl Vertex {
@@ -27,7 +29,7 @@ impl Vertex {
     }
 
     /// Where each field of a `Vertex` is, so the vertex shader can read it.
-    pub fn attribute_descriptions() -> [vk::VertexInputAttributeDescription; 2] {
+    pub fn attribute_descriptions() -> [vk::VertexInputAttributeDescription; 3] {
         // Field 1: the position → shader location 0, 3 floats, starts at byte 0
         let pos = vk::VertexInputAttributeDescription::builder()
             .binding(0)
@@ -44,7 +46,15 @@ impl Vertex {
             .offset(std::mem::size_of::<[f32; 3]>() as u32)
             .build();
 
-        [pos, colour]
+        // Field 3: the normal → shader location 2, 3 floats, starts right after colour
+        let normal = vk::VertexInputAttributeDescription::builder()
+            .binding(0)
+            .location(2)
+            .format(vk::Format::R32G32B32_SFLOAT)
+            .offset(2 * std::mem::size_of::<[f32; 3]>() as u32)
+            .build();
+
+        [pos, colour, normal]
     }
 }
 
@@ -53,18 +63,22 @@ pub const SQUARE: [Vertex; 4] = [
     Vertex {
         pos: [-0.05, -0.05, 0.0],
         colour: [0.0, 1.0, 0.0],
+        normal: [0.0, 0.0, 0.0],
     },
     Vertex {
         pos: [0.05, -0.05, 0.0],
         colour: [0.0, 0.0, 1.0],
+        normal: [0.0, 0.0, 0.0],
     },
     Vertex {
         pos: [0.05, 0.05, 0.0],
         colour: [1.0, 0.0, 0.0],
+        normal: [0.0, 0.0, 0.0],
     },
     Vertex {
         pos: [-0.05, 0.05, 0.0],
         colour: [0.0, 1.0, 0.0],
+        normal: [0.0, 0.0, 0.0],
     },
 ];
 /// The square's 2 triangles: 0-1-2 and 0-2-3, sharing the diagonal 0–2.
@@ -103,6 +117,7 @@ pub fn uv_sphere(
                     y / radius * 0.5 + 0.5,
                     z / radius * 0.5 + 0.5,
                 ],
+                normal: [x / radius, y / radius, z / radius],
             });
         }
     }
