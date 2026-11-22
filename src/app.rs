@@ -19,7 +19,7 @@ const DT: f64 = 0.001; // size of one physics step, in seconds
 // Radii: exaggerated for visibility (real ones would be invisible dots)
 const SUN_MASS: f64 = 1.0;
 const SUN_RADIUS: f64 = 0.5;
-const SUN_COLOUR: [f32; 3] = [1.0, 0.85, 0.4];
+const SUN_COLOUR: [f32; 3] = [1.0, 0.97, 0.92]; // white (yellow only through an atmosphere)
 
 /// One planet's starting data.
 struct PlanetData {
@@ -118,6 +118,7 @@ pub struct App {
     camera: Camera,
     /// Is the left mouse button held down?
     dragging: bool,
+    panning: bool,
     /// Mouse position at the previous `CursorMoved` event
     last_cursor: (f64, f64),
 }
@@ -160,6 +161,12 @@ impl ApplicationHandler for App {
                     }
                     (Key::Named(NamedKey::ArrowDown), ElementState::Pressed) => {
                         self.camera.fov_ctrl(false)
+                    }
+                    // R (or Shift+R): back to the Sun
+                    (Key::Character(key), ElementState::Pressed)
+                        if key.eq_ignore_ascii_case("r") =>
+                    {
+                        self.camera.reset()
                     }
                     // Any other key (or a key release): do nothing
                     (_, _) => (),
@@ -248,15 +255,21 @@ impl ApplicationHandler for App {
                 }
             }
             // Left button: start / stop dragging
-            WindowEvent::MouseInput { state, button, .. } => {
-                if button == MouseButton::Left {
-                    self.dragging = state == ElementState::Pressed;
-                }
-            }
+            WindowEvent::MouseInput { state, button, .. } => match button {
+                MouseButton::Left => self.dragging = state == ElementState::Pressed,
+                MouseButton::Right => self.panning = state == ElementState::Pressed,
+                _ => (),
+            },
             // Mouse moved: while dragging, rotate by the movement since the last event
             WindowEvent::CursorMoved { position, .. } => {
                 if self.dragging {
                     self.camera.rotate(
+                        (position.x - self.last_cursor.0) as f32,
+                        (position.y - self.last_cursor.1) as f32,
+                    );
+                }
+                if self.panning {
+                    self.camera.pan(
                         (position.x - self.last_cursor.0) as f32,
                         (position.y - self.last_cursor.1) as f32,
                     );
@@ -322,6 +335,7 @@ impl App {
                 45f32.to_radians(),
             ),
             dragging: false,
+            panning: false,
             last_cursor: (0.0, 0.0),
         }
     }

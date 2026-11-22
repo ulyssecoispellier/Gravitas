@@ -77,6 +77,25 @@ impl Camera {
         self.fov = self.fov.clamp(0.17, 2.11);
     }
 
+    /// Slides the target along the screen's right/up directions. `dx`/`dy` = mouse movement in pixels.
+    pub fn pan(&mut self, dx: f32, dy: f32) {
+        let x = self.distance * self.pitch.cos() * self.yaw.cos();
+        let y = self.distance * self.pitch.cos() * self.yaw.sin();
+        let z = self.distance * self.pitch.sin();
+
+        // Camera axes: back (target → camera), right, up
+        let back = Vec3 { x, y, z }.normalize();
+        let right = Vec3::Z.cross(back).normalize();
+        let up = back.cross(right);
+
+        self.target += (-right * dx + up * dy) * 0.0015 * self.distance;
+    }
+
+    /// Puts the target back on the Sun.
+    pub fn reset(&mut self) {
+        self.target = Vec3::ZERO;
+    }
+
     /// The projection matrix: the camera's lens (perspective, so far things look smaller).
     ///
     /// `aspect` = window width / height. It belongs to the window, so it's passed in, not stored.
