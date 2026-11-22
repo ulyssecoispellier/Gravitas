@@ -29,7 +29,7 @@ mod swapchain;
 use device::{create_logical_device, pick_physical_device};
 use instance::{create_instance, create_messenger};
 use pipeline::{create_pipeline, create_shader_module};
-use resources::{copy_buffer_to_image, create_buffer, create_image};
+use resources::{copy_buffer_to_image, create_buffer, create_image, write_image_descriptor};
 use swapchain::{Swapchain, create_swapchain};
 
 /// From this Vulkan version on, macOS needs the "portability" extensions to see MoltenVK / KosmicKrisp
@@ -68,6 +68,14 @@ pub struct RayPushConstants {
     pub camera_pos: [f32; 4],
     /// Sun: centre (x, y, z), w = radius
     pub sun: [f32; 4],
+}
+
+/// The data sent to the post-processing shader (through push constants).
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct PostPushConstants {
+    /// x = retro dithering on (1.0) / off (0.0), y z w = unused
+    pub settings: [f32; 4],
 }
 
 /// Owns every Vulkan object. Created once by `new`, cleaned up by `Drop`.
@@ -122,6 +130,18 @@ pub struct Renderer {
     depth_memory: vk::DeviceMemory,
     /// How the pipeline sees `depth_image`
     depth_view: vk::ImageView,
+    /// The scene is drawn here, then the post pass reads it
+    scene_image: vk::Image,
+    /// The memory behind `scene_image`
+    scene_memory: vk::DeviceMemory,
+    /// How shaders see `scene_image`
+    scene_view: vk::ImageView,
+    /// Layout of the post-processing pass
+    post_pipeline_layout: vk::PipelineLayout,
+    /// Post-processing pass: reads `scene_image`, writes the swapchain image
+    post_pipeline: vk::Pipeline,
+    /// Set 0 of the post pass: the scene image
+    post_descriptor_set: vk::DescriptorSet,
     /// The rocky planet's texture (pixels from textures/rocky.png)
     texture_image: vk::Image,
     /// The memory behind `texture_image` (GPU-only)
@@ -169,6 +189,17 @@ impl Renderer {
             DEPTH_FORMAT,
             vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
             vk::ImageAspectFlags::DEPTH,
+        )?;
+
+        // Offscreen image: the scene is drawn here, then read by the post pass
+        let (scene_image, scene_memory, scene_view) = create_image(
+            &instance,
+            &device,
+            physical_device,
+            swapchain.extent,
+            swapchain.format,
+            vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
+            vk::ImageAspectFlags::COLOR,
         )?;
 
         // 4. Where we record drawing commands
@@ -228,6 +259,20 @@ impl Renderer {
             ray_frag_module,
             descriptor_set_layout,
             false,
+            true,
+        )?;
+
+        // Post-processing pass: same full-screen vertex shader, no vertex buffer, no depth
+        let post_frag_module =
+            create_shader_module(&device, include_bytes!("../shaders/post.frag.spv"))?;
+        let (post_pipeline_layout, post_pipeline) = create_pipeline(
+            &device,
+            swapchain.format,
+            ray_vert_module,
+            post_frag_module,
+            descriptor_set_layout,
+            false,
+            false,
         )?;
 
         // Mesh pass: the planets
@@ -237,6 +282,7 @@ impl Renderer {
             vert_module,
             frag_module,
             descriptor_set_layout,
+            true,
             true,
         )?;
 
@@ -295,15 +341,15 @@ impl Renderer {
             .mipmap_mode(vk::SamplerMipmapMode::LINEAR);
         let sampler = unsafe { device.create_sampler(&sampler_info, None)? };
 
-        // Descriptor pool: 1 set, 1 texture + sampler
+        // Descriptor pool: 2 sets (planet texture, scene image), 1 image + sampler each
         let pool_size = vk::DescriptorPoolSize::builder()
             .type_(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .descriptor_count(1);
+            .descriptor_count(2);
         let descriptor_pool = unsafe {
             device.create_descriptor_pool(
                 &vk::DescriptorPoolCreateInfo::builder()
                     .pool_sizes(&[pool_size])
-                    .max_sets(1),
+                    .max_sets(2),
                 None,
             )?
         };
@@ -316,17 +362,17 @@ impl Renderer {
                     .set_layouts(&[descriptor_set_layout]),
             )?
         }[0];
-        let image_info = vk::DescriptorImageInfo::builder()
-            .sampler(sampler)
-            .image_view(texture_view)
-            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-        let image_infos = &[image_info];
-        let write = vk::WriteDescriptorSet::builder()
-            .dst_set(descriptor_set)
-            .dst_binding(0)
-            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .image_info(image_infos);
-        unsafe { device.update_descriptor_sets(&[write], &[] as &[vk::CopyDescriptorSet]) };
+        write_image_descriptor(&device, descriptor_set, sampler, texture_view);
+
+        // Post descriptor set: binding 0 → scene image (same layout as the texture set)
+        let post_descriptor_set = unsafe {
+            device.allocate_descriptor_sets(
+                &vk::DescriptorSetAllocateInfo::builder()
+                    .descriptor_pool(descriptor_pool)
+                    .set_layouts(&[descriptor_set_layout]),
+            )?
+        }[0];
+        write_image_descriptor(&device, post_descriptor_set, sampler, scene_view);
 
         // 8. A unit sphere (radius 1), uploaded to the GPU. Drawn once per body, scaled to its radius
         let (sphere_vertices, sphere_indices) = uv_sphere(128, 64, 1.0, [0.0, 0.0, 0.0]);
@@ -348,7 +394,13 @@ impl Renderer {
         )?;
 
         // The pipeline has its own copy of the shaders now, so the modules can go
-        for module in [vert_module, frag_module, ray_vert_module, ray_frag_module] {
+        for module in [
+            vert_module,
+            frag_module,
+            ray_vert_module,
+            ray_frag_module,
+            post_frag_module,
+        ] {
             unsafe {
                 device.destroy_shader_module(module, None);
             }
@@ -389,6 +441,12 @@ impl Renderer {
             depth_image,
             depth_memory,
             depth_view,
+            scene_image,
+            scene_memory,
+            scene_view,
+            post_pipeline_layout,
+            post_pipeline,
+            post_descriptor_set,
             texture_image,
             texture_memory,
             texture_view,
@@ -408,6 +466,7 @@ impl Renderer {
         &mut self,
         pushes: &[PushConstants],
         ray_push: &RayPushConstants,
+        retro: bool,
     ) -> Result<()> {
         unsafe {
             // 1. Wait until the GPU has finished the previous frame, then re-arm the fence
@@ -429,7 +488,7 @@ impl Renderer {
             // 3. Record this frame's commands
             self.device
                 .reset_command_buffer(self.command_buffer, vk::CommandBufferResetFlags::empty())?;
-            self.record_commands(index, pushes, ray_push)?;
+            self.record_commands(index, pushes, ray_push, retro)?;
 
             // 4. Submit: wait for the image before writing colours,
             // signal `render_finished` when done, then signal the fence
@@ -471,6 +530,7 @@ impl Renderer {
         i: usize,
         pushes: &[PushConstants],
         ray_push: &RayPushConstants,
+        retro: bool,
     ) -> Result<()> {
         unsafe {
             self.device.begin_command_buffer(
@@ -484,8 +544,8 @@ impl Renderer {
                 .level_count(1)
                 .layer_count(1);
 
-            // Barrier: switch the swapchain image to "ready to draw colours".
-            // UNDEFINED = we don't care about its old content, it gets cleared anyway
+            // Barrier: switch the swapchain image and the scene image to "ready to draw colours".
+            // UNDEFINED = we don't care about their old content, they get overwritten anyway
             let to_draw = vk::ImageMemoryBarrier::builder()
                 .old_layout(vk::ImageLayout::UNDEFINED)
                 .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
@@ -495,6 +555,15 @@ impl Renderer {
                 .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
                 .image(self.swapchain.images[i])
                 .subresource_range(range);
+            let scene_to_draw = vk::ImageMemoryBarrier::builder()
+                .old_layout(vk::ImageLayout::UNDEFINED)
+                .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                .src_access_mask(vk::AccessFlags::empty())
+                .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .image(self.scene_image)
+                .subresource_range(range);
 
             self.device.cmd_pipeline_barrier(
                 self.command_buffer,
@@ -503,7 +572,7 @@ impl Renderer {
                 vk::DependencyFlags::empty(),
                 &[] as &[vk::MemoryBarrier],
                 &[] as &[vk::BufferMemoryBarrier],
-                &[to_draw],
+                &[to_draw, scene_to_draw],
             );
 
             // Same for the depth image: make it ready for depth testing
@@ -534,7 +603,7 @@ impl Renderer {
                 &[depth_barrier],
             );
 
-            // Colour attachment: clear to black at the start, keep the result (it goes to the screen)
+            // Colour attachment: the scene image. Clear to black, keep the result (the post pass reads it)
             let clear = vk::ClearValue {
                 color: vk::ClearColorValue {
                     float32: [0.0, 0.0, 0.0, 1.0],
@@ -542,7 +611,7 @@ impl Renderer {
             };
 
             let attachment = vk::RenderingAttachmentInfo::builder()
-                .image_view(self.swapchain.image_views[i])
+                .image_view(self.scene_view)
                 .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
                 .load_op(vk::AttachmentLoadOp::CLEAR)
                 .store_op(vk::AttachmentStoreOp::STORE)
@@ -643,6 +712,67 @@ impl Renderer {
             }
             self.device.cmd_end_rendering(self.command_buffer);
 
+            // Barrier: the scene image goes from "being drawn" to "being read by a shader"
+            let scene_to_read = vk::ImageMemoryBarrier::builder()
+                .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+                .dst_access_mask(vk::AccessFlags::SHADER_READ)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .image(self.scene_image)
+                .subresource_range(range);
+            self.device.cmd_pipeline_barrier(
+                self.command_buffer,
+                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT, // wait for the scene to be written...
+                vk::PipelineStageFlags::FRAGMENT_SHADER, // ...before the post shader reads it
+                vk::DependencyFlags::empty(),
+                &[] as &[vk::MemoryBarrier],
+                &[] as &[vk::BufferMemoryBarrier],
+                &[scene_to_read],
+            );
+
+            // Post pass: draws into the swapchain image (every pixel is overwritten: no clear, no depth)
+            let post_attachment = vk::RenderingAttachmentInfo::builder()
+                .image_view(self.swapchain.image_views[i])
+                .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                .load_op(vk::AttachmentLoadOp::DONT_CARE)
+                .store_op(vk::AttachmentStoreOp::STORE);
+            let post_attachments = &[post_attachment];
+            let post_rendering = vk::RenderingInfo::builder()
+                .render_area(vk::Rect2D::builder().extent(self.swapchain.extent))
+                .layer_count(1)
+                .color_attachments(post_attachments);
+
+            self.device
+                .cmd_begin_rendering(self.command_buffer, &post_rendering);
+            self.device.cmd_bind_pipeline(
+                self.command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.post_pipeline,
+            );
+            // Set 0 = the scene image
+            self.device.cmd_bind_descriptor_sets(
+                self.command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.post_pipeline_layout,
+                0,
+                &[self.post_descriptor_set],
+                &[],
+            );
+            let post_push = PostPushConstants {
+                settings: [if retro { 1.0 } else { 0.0 }, 0.0, 0.0, 0.0],
+            };
+            self.device.cmd_push_constants(
+                self.command_buffer,
+                self.post_pipeline_layout,
+                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+                0,
+                bytemuck::bytes_of(&post_push),
+            );
+            self.device.cmd_draw(self.command_buffer, 3, 1, 0, 0);
+            self.device.cmd_end_rendering(self.command_buffer);
+
             // Barrier: switch the image to "ready to be shown on screen"
             let to_present = vk::ImageMemoryBarrier::builder()
                 .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
@@ -675,8 +805,8 @@ impl Renderer {
         self.swapchain.extent.width as f32 / self.swapchain.extent.height as f32
     }
 
-    /// Destroys everything that depends on the window size: the swapchain, its image views
-    /// and the depth image. Used by `Drop`, and when the window is resized.
+    /// Destroys everything that depends on the window size: the swapchain, its image views,
+    /// the depth image and the scene image. Used by `Drop`, and when the window is resized.
     fn destroy_swapchain(&mut self) {
         unsafe {
             // Views first, then the images they look at, then the memory behind them
@@ -686,13 +816,16 @@ impl Renderer {
             self.device.destroy_image_view(self.depth_view, None);
             self.device.destroy_image(self.depth_image, None);
             self.device.free_memory(self.depth_memory, None);
+            self.device.destroy_image_view(self.scene_view, None);
+            self.device.destroy_image(self.scene_image, None);
+            self.device.free_memory(self.scene_memory, None);
             // The swapchain last: it owns its images
             self.device
                 .destroy_swapchain_khr(self.swapchain.handle, None);
         };
     }
 
-    /// Rebuilds the swapchain and the depth image at the window's new size.
+    /// Rebuilds the swapchain, the depth image and the scene image at the window's new size.
     /// The pipeline stays: its viewport and scissor are dynamic, so it doesn't depend on the size.
     pub fn recreate_swapchain(&mut self, window: &Window) -> Result<()> {
         unsafe {
@@ -719,6 +852,23 @@ impl Renderer {
                 vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
                 vk::ImageAspectFlags::DEPTH,
             )?;
+
+            // New scene image, and point the post pass at it
+            (self.scene_image, self.scene_memory, self.scene_view) = create_image(
+                &self.instance,
+                &self.device,
+                self.physical_device,
+                self.swapchain.extent,
+                self.swapchain.format,
+                vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
+                vk::ImageAspectFlags::COLOR,
+            )?;
+            write_image_descriptor(
+                &self.device,
+                self.post_descriptor_set,
+                self.sampler,
+                self.scene_view,
+            );
         }
 
         Ok(())
@@ -760,6 +910,9 @@ impl Drop for Renderer {
             self.device.destroy_pipeline(self.ray_pipeline, None);
             self.device
                 .destroy_pipeline_layout(self.ray_pipeline_layout, None);
+            self.device.destroy_pipeline(self.post_pipeline, None);
+            self.device
+                .destroy_pipeline_layout(self.post_pipeline_layout, None);
             // Window-size objects (swapchain, depth image), then the device itself
             self.destroy_swapchain();
             self.device.destroy_device(None);

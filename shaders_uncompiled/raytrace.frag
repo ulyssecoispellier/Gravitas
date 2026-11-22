@@ -75,5 +75,8 @@ void main() {
 
     // Dithering: tiny per-pixel noise hides the 256-level steps (banding)
     float noise = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
-    out_color.rgb += (noise - 0.5) / 255.0;
+    // Add the noise in sRGB space (what the screen shows), not in linear space
+    vec3 srgb = pow(out_color.rgb, vec3(1.0 / 2.2));
+    srgb += (noise - 0.5) / 255.0;
+    out_color.rgb = pow(max(srgb, 0.0), vec3(2.2));
 }

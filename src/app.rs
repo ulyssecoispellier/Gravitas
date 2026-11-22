@@ -123,6 +123,8 @@ pub struct App {
     last_cursor: (f64, f64),
     /// Simulated seconds per real second (time speed)
     sim_speed: f64,
+    /// Retro dithering post-effect on/off (C key)
+    retro: bool,
 }
 
 // winit calls these methods when something happens (the app starts, a key is pressed...)
@@ -176,6 +178,12 @@ impl ApplicationHandler for App {
                     }
                     (Key::Named(NamedKey::ArrowRight), ElementState::Pressed) => {
                         self.sim_speed = (self.sim_speed + 0.25).clamp(0.0, 50.0);
+                    }
+                    // C: retro dithering on/off
+                    (Key::Character(key), ElementState::Pressed)
+                        if key.eq_ignore_ascii_case("c") =>
+                    {
+                        self.retro = !self.retro;
                     }
                     // Any other key (or a key release): do nothing
                     (_, _) => (),
@@ -269,7 +277,7 @@ impl ApplicationHandler for App {
                         ],
                     };
 
-                    renderer.draw_frame(&pushes, &ray_push).unwrap();
+                    renderer.draw_frame(&pushes, &ray_push, self.retro).unwrap();
                 }
 
                 // Ask for the next frame: this keeps the loop going
@@ -361,6 +369,7 @@ impl App {
             panning: false,
             last_cursor: (0.0, 0.0),
             sim_speed: 1.0,
+            retro: false,
         }
     }
 }

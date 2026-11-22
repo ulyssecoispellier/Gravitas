@@ -44,6 +44,8 @@ It is also a learning project: the goal is to understand Rust and Vulkan from th
 | Shadow rays: eclipses and moon shadows (ray from each planet pixel towards the Sun) | ⬜ Planned |
 | Atmospheric scattering | ⬜ Planned |
 | Bloom + HDR post-processing | ⬜ Planned |
+| Post-processing pass (scene drawn offscreen, then a full-screen pass to the screen) | ✅ Done |
+| Retro dithering mode, toggled with `C` (ordered / Bayer dithering, few colour levels) | ✅ Done |
 | Planetary ring: flat disk mesh with a transparent striped texture | ⬜ Planned |
 | Asteroid belt (between Mars and Jupiter) + Kuiper belt (beyond Neptune): thousands of rocks in one draw call (GPU instancing, `VertexInputRate::INSTANCE`) | ⬜ Planned |
 | Test-particle physics: small bodies feel gravity but don't pull (N×planets instead of N×N) | ⬜ Planned |
@@ -144,6 +146,7 @@ In debug builds, Vulkan validation messages are printed to the terminal (🟡 wa
 | `←` / `→` | Slow down / speed up time (×0 to ×10) |
 | Right click + drag | Move around (pan) |
 | `R` | Re-centre the camera on the Sun |
+| `C` | Retro dithering on / off |
 
 ---
 

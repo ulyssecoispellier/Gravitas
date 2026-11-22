@@ -238,3 +238,23 @@ pub(super) fn copy_buffer_to_image(
 
     Ok(())
 }
+
+/// Points binding 0 of `set` at `view`, read through `sampler` (image in SHADER_READ_ONLY_OPTIMAL).
+pub(super) fn write_image_descriptor(
+    device: &Device,
+    set: vk::DescriptorSet,
+    sampler: vk::Sampler,
+    view: vk::ImageView,
+) {
+    let image_info = vk::DescriptorImageInfo::builder()
+        .sampler(sampler)
+        .image_view(view)
+        .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    let image_infos = &[image_info];
+    let write = vk::WriteDescriptorSet::builder()
+        .dst_set(set)
+        .dst_binding(0)
+        .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+        .image_info(image_infos);
+    unsafe { device.update_descriptor_sets(&[write], &[] as &[vk::CopyDescriptorSet]) };
+}
