@@ -13,7 +13,7 @@ use vulkanalia::vk::{
 use vulkanalia::window as vk_window;
 use winit::window::Window;
 
-use crate::mesh::{SQUARE, SQUARE_INDICES, Vertex};
+use crate::mesh::{SQUARE, SQUARE_INDICES, Vertex, uv_sphere};
 
 const PORTABILITY_MACOS_VERSION: Version = Version::new(1, 3, 216);
 const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
@@ -41,6 +41,7 @@ pub struct Renderer {
     vertex_memory: vk::DeviceMemory,
     index_buffer: vk::Buffer,
     index_memory: vk::DeviceMemory,
+    index_count: u32,
 }
 
 impl Renderer {
@@ -97,20 +98,22 @@ impl Renderer {
         let (pipeline_layout, pipeline) =
             create_pipeline(&device, swapchain.format, vert_module, frag_module)?;
 
+        let (sphere_vertices, sphere_indices) = uv_sphere(32, 16, 0.1, [0.0, 0.0, 0.0]);
         let (vertex_buffer, vertex_memory) = create_buffer(
             &instance,
             &device,
             physical_device,
             vk::BufferUsageFlags::VERTEX_BUFFER,
-            &SQUARE,
+            &sphere_vertices,
         )?;
+        let index_count = sphere_indices.len() as u32;
 
         let (index_buffer, index_memory) = create_buffer(
             &instance,
             &device,
             physical_device,
             vk::BufferUsageFlags::INDEX_BUFFER,
-            &SQUARE_INDICES,
+            &sphere_indices,
         )?;
 
         for module in [vert_module, frag_module] {
@@ -148,6 +151,7 @@ impl Renderer {
             vertex_memory,
             index_buffer,
             index_memory,
+            index_count,
         })
     }
 }
@@ -293,14 +297,8 @@ impl Renderer {
                     0,
                     bytemuck::bytes_of(&transform.to_cols_array()),
                 );
-                self.device.cmd_draw_indexed(
-                    self.command_buffer,
-                    SQUARE_INDICES.len() as u32,
-                    1,
-                    0,
-                    0,
-                    0,
-                );
+                self.device
+                    .cmd_draw_indexed(self.command_buffer, self.index_count, 1, 0, 0, 0);
             }
             self.device.cmd_end_rendering(self.command_buffer);
 
