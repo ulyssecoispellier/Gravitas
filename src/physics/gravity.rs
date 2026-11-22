@@ -7,7 +7,8 @@ use crate::physics::Body;
 /// Gravitational constant. 1.0 instead of 6.674e-11, because our units are arbitrary.
 pub const G: f64 = 1.0;
 /// Softening length: stops the force from exploding when two bodies get very close.
-pub const EPSILON: f64 = 0.05;
+/// Keep it much smaller than the smallest orbit (the moon's), or it weakens gravity there.
+pub const EPSILON: f64 = 0.01;
 
 /// Total gravitational acceleration on body `i`, caused by every other body.
 ///
@@ -31,4 +32,12 @@ pub fn acceleration_on(i: usize, bodies: &[Body]) -> DVec3 {
     }
 
     acc
+}
+
+/// Speed needed for a circular orbit at `distance` from a body of mass `central_mass`.
+///
+/// Gravity must equal the force that bends the path into a circle:
+/// `G·M·m / r² = m·v² / r`, so `v = √(G·M / r)`. The orbiting body's own mass cancels out.
+pub fn orbit_speed(central_mass: f64, distance: f64) -> f64 {
+    ((G * central_mass) / distance).sqrt()
 }

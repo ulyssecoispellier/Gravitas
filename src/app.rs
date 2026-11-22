@@ -9,11 +9,19 @@ use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId};
 
 use crate::camera::Camera;
-use crate::physics::{Body, step_euler};
+use crate::physics::{Body, orbit_speed, step_euler};
 use crate::renderer::{PushConstants, Renderer};
 
-const ORBIT_SPEED: f64 = 0.5; // speed for a circular orbit
 const DT: f64 = 0.001; // size of one physics step, in seconds
+
+// The star system (G = 1, so the units are arbitrary)
+const STAR_MASS: f64 = 1.0;
+const ROCKY_DISTANCE: f64 = 1.0; // from the star
+const GIANT_DISTANCE: f64 = 2.0; // from the star
+const GIANT_MASS: f64 = 0.02;
+// From the giant. Must stay well inside its Hill sphere (≈ 0.38 here), or the star steals the moon
+const MOON_DISTANCE: f64 = 0.25;
+const MOON_TILT: f64 = 30.0 * std::f64::consts::PI / 180.0; // 10°, in radians
 
 /// Everything the program keeps between two events.
 ///
@@ -118,12 +126,12 @@ impl ApplicationHandler for App {
                         .enumerate()
                         .map(|(i, body)| {
                             let pos = body.pos();
-                            // Where this body is in the world
+                            // Right to left: scale the unit sphere to the body's radius, then move it into place
                             let model = Mat4::from_translation(Vec3 {
                                 x: pos.x as f32,
                                 y: pos.y as f32,
                                 z: pos.z as f32,
-                            });
+                            }) * Mat4::from_scale(Vec3::splat(body.radius() as f32));
 
                             PushConstants {
                                 transform: (projection * view * model).to_cols_array(),
@@ -138,6 +146,12 @@ impl ApplicationHandler for App {
                                     star_pos.x as f32,
                                     star_pos.y as f32,
                                     star_pos.z as f32,
+                                    0.0,
+                                ],
+                                info: [
+                                    body.radius() as f32,
+                                    if i == 0 { 1.0 } else { 0.0 },
+                                    0.0,
                                     0.0,
                                 ],
                             }
@@ -200,29 +214,49 @@ impl App {
     pub fn new() -> Self {
         Self {
             window: None,
-            // Two equal masses 2 units apart, moving in opposite directions:
-            // a circular orbit around their centre, (1, 0, 0)
+            // A heavy star at the centre, 2 planets on circular orbits, and a moon around the gas giant.
+            // The star must stay first: body 0 is the light source.
             bodies: vec![
+                // Star
+                Body::new(DVec3::ZERO, DVec3::ZERO, STAR_MASS, 0.25),
+                // Rocky (telluric) planet
                 Body::new(
-                    DVec3::new(0.0, 0.0, 0.0),
-                    DVec3::new(0.0, -ORBIT_SPEED, 0.0),
-                    1.0,
+                    DVec3::new(ROCKY_DISTANCE, 0.0, 0.0),
+                    DVec3::new(0.0, orbit_speed(STAR_MASS, ROCKY_DISTANCE), 0.0),
+                    0.00001,
+                    0.06,
+                ),
+                // Gas giant
+                Body::new(
+                    DVec3::new(GIANT_DISTANCE, 0.0, 0.0),
+                    DVec3::new(0.0, orbit_speed(STAR_MASS, GIANT_DISTANCE), 0.0),
+                    GIANT_MASS,
                     0.1,
                 ),
+                // Gas giant's moon: next to the giant, moving with it + orbiting it on a tilted plane
                 Body::new(
-                    DVec3::new(2.0, 0.0, 0.0),
-                    DVec3::new(0.0, ORBIT_SPEED, 0.0),
-                    1.0,
-                    0.1,
+                    DVec3::new(GIANT_DISTANCE + MOON_DISTANCE, 0.0, 0.0),
+                    {
+                        let moon_speed = orbit_speed(GIANT_MASS, MOON_DISTANCE);
+
+                        // Its own speed is split between y and z by the tilt, so the orbit plane leans
+                        DVec3::new(
+                            0.0,
+                            orbit_speed(STAR_MASS, GIANT_DISTANCE) + moon_speed * MOON_TILT.cos(),
+                            moon_speed * MOON_TILT.sin(),
+                        )
+                    },
+                    0.000001,
+                    0.02,
                 ),
             ],
             frame: 0,
             last_frame: Instant::now(),
             accumulator: 0.0,
             renderer: None,
-            // Same view as the old fixed camera at (1, -4, 3): distance 5, looking at the orbit's centre
+            // Looking at the star from 5 units away, slightly from above
             camera: Camera::new(
-                Vec3::new(1.0, 0.0, 0.0),
+                Vec3::new(0.0, 0.0, 0.0),
                 -std::f32::consts::FRAC_PI_2,
                 (3.0f32 / 5.0).asin(),
                 5.0,

@@ -12,6 +12,7 @@ layout(push_constant) uniform Push {
     mat4 transform;
     vec4 body_pos;
     vec4 light_pos;
+    vec4 info;
 } push;
 
 // Outputs to the fragment shader (blended across the triangle)
@@ -26,5 +27,5 @@ void main() {
     // The model matrix only moves the sphere (no rotation), so the normal stays valid as is
     frag_normal = in_normal;
     
-    frag_world_pos = in_pos + push.body_pos.xyz;
+    frag_world_pos = in_pos * push.info.x + push.body_pos.xyz;
 }

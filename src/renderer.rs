@@ -40,6 +40,7 @@ pub struct PushConstants {
     pub body_pos: [f32; 4],
     /// Where the star is (x, y, z), + an unused 4th number (padding)
     pub light_pos: [f32; 4],
+    pub info: [f32; 4],
 }
 
 /// Owns every Vulkan object. Created once by `new`, cleaned up by `Drop`.
@@ -152,8 +153,8 @@ impl Renderer {
         let (pipeline_layout, pipeline) =
             create_pipeline(&device, swapchain.format, vert_module, frag_module)?;
 
-        // 7. The sphere mesh, uploaded to the GPU (one mesh, drawn once per body)
-        let (sphere_vertices, sphere_indices) = uv_sphere(32, 16, 0.7, [0.0, 0.0, 0.0]);
+        // 7. A unit sphere (radius 1), uploaded to the GPU. Drawn once per body, scaled to its radius
+        let (sphere_vertices, sphere_indices) = uv_sphere(32, 16, 1.0, [0.0, 0.0, 0.0]);
         let (vertex_buffer, vertex_memory) = create_buffer(
             &instance,
             &device,

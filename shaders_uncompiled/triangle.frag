@@ -15,6 +15,7 @@ layout(push_constant) uniform Push {
     mat4 transform;
     vec4 body_pos;
     vec4 light_pos;
+    vec4 info;
 } push;
 
 void main() {
@@ -26,7 +27,7 @@ void main() {
     // Diffuse light: 1 when facing the light, 0 at 90° or facing away
     float brightness = max(dot(normal, light_dir), 0.0);
     // A glowing body (the star, w = 1) is fully bright everywhere
-    brightness = max(brightness, push.body_pos.w);
+    brightness = max(brightness, push.info.y);
 
     out_color = vec4(frag_color * brightness, 1.0);
 }
