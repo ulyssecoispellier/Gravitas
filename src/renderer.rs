@@ -448,6 +448,52 @@ impl Renderer {
     pub fn aspect(&self) -> f32 {
         self.swapchain.extent.width as f32 / self.swapchain.extent.height as f32
     }
+
+    /// Destroys everything that depends on the window size: the swapchain, its image views
+    /// and the depth image. Used by `Drop`, and when the window is resized.
+    fn destroy_swapchain(&mut self) {
+        unsafe {
+            // Views first, then the images they look at, then the memory behind them
+            for &img_view in &self.swapchain.image_views {
+                self.device.destroy_image_view(img_view, None);
+            }
+            self.device.destroy_image_view(self.depth_view, None);
+            self.device.destroy_image(self.depth_image, None);
+            self.device.free_memory(self.depth_memory, None);
+            // The swapchain last: it owns its images
+            self.device
+                .destroy_swapchain_khr(self.swapchain.handle, None);
+        };
+    }
+
+    /// Rebuilds the swapchain and the depth image at the window's new size.
+    /// The pipeline stays: its viewport and scissor are dynamic, so it doesn't depend on the size.
+    pub fn recreate_swapchain(&mut self, window: &Window) -> Result<()> {
+        unsafe {
+            // Wait until the GPU stops using the old images, then destroy them
+            self.device.device_wait_idle()?;
+            self.destroy_swapchain();
+
+            // New swapchain at the window's current size
+            self.swapchain = create_swapchain(
+                window,
+                &self.instance,
+                &self.device,
+                self.physical_device,
+                self.surface,
+            )?;
+
+            // New depth image, matching the new size (one depth per pixel)
+            (self.depth_image, self.depth_memory, self.depth_view) = create_depth_image(
+                &self.instance,
+                &self.device,
+                self.physical_device,
+                self.swapchain.extent,
+            )?;
+        }
+
+        Ok(())
+    }
 }
 
 /// Destroys every Vulkan object, in reverse order of creation (children before parents).
@@ -472,16 +518,8 @@ impl Drop for Renderer {
             self.device
                 .destroy_pipeline_layout(self.pipeline_layout, None);
             self.device.destroy_pipeline(self.pipeline, None);
-            // Images: views first, then images, then memory
-            for &img_view in &self.swapchain.image_views {
-                self.device.destroy_image_view(img_view, None);
-            }
-            self.device.destroy_image_view(self.depth_view, None);
-            self.device.destroy_image(self.depth_image, None);
-            self.device.free_memory(self.depth_memory, None);
-            // Swapchain, then the device itself
-            self.device
-                .destroy_swapchain_khr(self.swapchain.handle, None);
+            // Window-size objects (swapchain, depth image), then the device itself
+            self.destroy_swapchain();
             self.device.destroy_device(None);
             // Instance-level objects last
             self.instance.destroy_surface_khr(self.surface, None);

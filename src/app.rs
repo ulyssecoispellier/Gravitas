@@ -161,6 +161,15 @@ impl ApplicationHandler for App {
 
                 self.camera.zoom(amount);
             }
+            // Window resized: rebuild the images that depend on its size (not when minimized: size 0)
+            WindowEvent::Resized(size) => match (size.width, size.height) {
+                (0, _) | (_, 0) => (),
+                (_, _) => {
+                    if let (Some(renderer), Some(window)) = (&mut self.renderer, &self.window) {
+                        renderer.recreate_swapchain(window).unwrap();
+                    }
+                }
+            },
             // Ignore every other event
             _ => {}
         }
