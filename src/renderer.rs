@@ -215,6 +215,7 @@ impl Renderer {
             DEPTH_FORMAT,
             vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
             vk::ImageAspectFlags::DEPTH,
+            1
         )?;
 
         // Offscreen image: the scene is drawn here, then read by the post pass
@@ -226,6 +227,7 @@ impl Renderer {
             HDR_FORMAT,
             vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
             vk::ImageAspectFlags::COLOR,
+            1
         )?;
 
         // 4. Where we record drawing commands
@@ -351,6 +353,7 @@ impl Renderer {
             &pixels,
             tex_width,
             tex_height,
+            1,
             vk::Format::R8G8B8A8_SRGB,
         )?;
 
@@ -370,6 +373,7 @@ impl Renderer {
             &sky_pixels,
             sky_width,
             sky_height,
+            1,
             HDR_FORMAT,
         )?;
 
@@ -928,6 +932,7 @@ impl Renderer {
                 DEPTH_FORMAT,
                 vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
                 vk::ImageAspectFlags::DEPTH,
+                1
             )?;
 
             // New scene image, and point the post pass at it
@@ -939,6 +944,7 @@ impl Renderer {
                 HDR_FORMAT,
                 vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
                 vk::ImageAspectFlags::COLOR,
+                1
             )?;
             write_image_descriptor(
                 &self.device,

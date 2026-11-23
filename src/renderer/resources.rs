@@ -71,6 +71,7 @@ pub(super) fn create_image(
     format: vk::Format,
     usage: vk::ImageUsageFlags,
     aspect: vk::ImageAspectFlags,
+    layers: u32,
 ) -> Result<(vk::Image, vk::DeviceMemory, vk::ImageView)> {
     let info = vk::ImageCreateInfo::builder()
         .image_type(vk::ImageType::_2D)
@@ -80,7 +81,7 @@ pub(super) fn create_image(
             depth: 1,
         })
         .mip_levels(1)
-        .array_layers(1)
+        .array_layers(layers)
         .format(format)
         .tiling(vk::ImageTiling::OPTIMAL)
         .initial_layout(vk::ImageLayout::UNDEFINED)
@@ -122,10 +123,10 @@ pub(super) fn create_image(
         .base_mip_level(0)
         .level_count(1)
         .base_array_layer(0)
-        .layer_count(1);
+        .layer_count(layers);
     let view_info = vk::ImageViewCreateInfo::builder()
         .image(image)
-        .view_type(vk::ImageViewType::_2D)
+        .view_type(if layers > 1 { vk::ImageViewType::_2D_ARRAY } else { vk::ImageViewType::_2D })
         .format(format)
         .subresource_range(range);
     let view = unsafe { device.create_image_view(&view_info, None)? };
@@ -142,6 +143,7 @@ pub(super) fn copy_buffer_to_image(
     image: vk::Image,
     width: u32,
     height: u32,
+    layers: u32,
 ) -> Result<()> {
     unsafe {
         // 1. Allocate a temporary command buffer
@@ -158,8 +160,8 @@ pub(super) fn copy_buffer_to_image(
 
         let range = vk::ImageSubresourceRange::builder()
             .aspect_mask(vk::ImageAspectFlags::COLOR)
-            .level_count(1)
-            .layer_count(1);
+            .level_count(layers)
+            .layer_count(layers);
 
         // UNDEFINED → TRANSFER_DST_OPTIMAL
         let to_transfer = vk::ImageMemoryBarrier::builder()
@@ -271,6 +273,7 @@ pub(super) fn create_texture<T: Copy>(
     pixels: &[T],
     width: u32,
     height: u32,
+    layers: u32,
     format: vk::Format,
 ) -> Result<(vk::Image, vk::DeviceMemory, vk::ImageView)> {
     // Texture image (copy destination, sampled by shaders)
@@ -282,6 +285,7 @@ pub(super) fn create_texture<T: Copy>(
         format,
         vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
         vk::ImageAspectFlags::COLOR,
+        layers,
     )?;
 
     // Staging buffer (CPU-writable copy source)
@@ -302,6 +306,7 @@ pub(super) fn create_texture<T: Copy>(
         texture_image,
         width,
         height,
+        layers,
     )?;
 
     // Staging buffer no longer needed
