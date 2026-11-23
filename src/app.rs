@@ -1,5 +1,6 @@
 //! The application: owns the window, the simulation and the renderer, and reacts to events.
 
+use bytemuck::Zeroable;
 use glam::{DVec3, Mat4, Vec3};
 use std::time::Instant;
 use winit::application::ApplicationHandler;
@@ -10,7 +11,7 @@ use winit::window::{Window, WindowId};
 
 use crate::camera::Camera;
 use crate::physics::{Body, orbit_speed, step_euler};
-use crate::renderer::{MAX_BODIES, PushConstants, RayPushConstants, Renderer};
+use crate::renderer::{BodiesUniform, MAX_BODIES, PushConstants, RayPushConstants, Renderer};
 
 const DT: f64 = 0.001; // size of one physics step, in seconds
 
@@ -125,6 +126,8 @@ pub struct App {
     sim_speed: f64,
     /// Retro dithering post-effect on/off (C key)
     retro: bool,
+    /// Draw the old mesh planets on top of the ray-traced ones (M key, for comparison)
+    show_meshes: bool,
 }
 
 // winit calls these methods when something happens (the app starts, a key is pressed...)
@@ -185,6 +188,12 @@ impl ApplicationHandler for App {
                         if key.eq_ignore_ascii_case("c") =>
                     {
                         self.retro = !self.retro;
+                    }
+                    // M: mesh planets on/off
+                    (Key::Character(key), ElementState::Pressed)
+                        if key.eq_ignore_ascii_case("m") =>
+                    {
+                        self.show_meshes = !self.show_meshes;
                     }
                     // Any other key (or a key release): do nothing
                     (_, _) => (),
@@ -279,19 +288,31 @@ impl ApplicationHandler for App {
                     };
 
                     // Every body's position + radius, for the shadow rays (unused slots stay at radius 0)
-                    let mut bodies_data = [[0.0f32; 4]; MAX_BODIES];
+                    let mut bodies_data = BodiesUniform::zeroed();
                     for (i, body) in self.bodies.iter().enumerate().take(MAX_BODIES) {
                         let pos = body.pos();
-                        bodies_data[i] = [
+                        bodies_data.bodies[i] = [
                             pos.x as f32,
                             pos.y as f32,
                             pos.z as f32,
                             body.radius() as f32,
                         ];
+                        bodies_data.colours[i] = [
+                            self.colours[i][0],
+                            self.colours[i][1],
+                            self.colours[i][2],
+                            0.0,
+                        ];
                     }
 
                     renderer
-                        .draw_frame(&pushes, &ray_push, self.retro, &bodies_data)
+                        .draw_frame(
+                            // Mesh planets, or none (the ray pass draws them)
+                            if self.show_meshes { &pushes } else { &[] },
+                            &ray_push,
+                            self.retro,
+                            &bodies_data,
+                        )
                         .unwrap();
                 }
 
@@ -385,6 +406,7 @@ impl App {
             last_cursor: (0.0, 0.0),
             sim_speed: 1.0,
             retro: false,
+            show_meshes: false,
         }
     }
 }

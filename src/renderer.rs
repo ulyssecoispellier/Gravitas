@@ -8,6 +8,7 @@
 //! `instance`, `device`, `swapchain`, `pipeline` and `resources` (buffers and images).
 
 use anyhow::{Ok, Result, anyhow};
+use bytemuck::Zeroable;
 use vulkanalia::Version;
 use vulkanalia::loader::{LIBRARY, LibloadingLoader};
 use vulkanalia::prelude::v1_3::*;
@@ -80,6 +81,14 @@ pub struct RayPushConstants {
 pub struct PostPushConstants {
     /// x = retro dithering on (1.0) / off (0.0), y z w = unused
     pub settings: [f32; 4],
+}
+
+/// Every body's data for the shaders (uniform buffer, binding 1): positions + radii, and colours.
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct BodiesUniform {
+    pub bodies: [[f32; 4]; MAX_BODIES],
+    pub colours: [[f32; 4]; MAX_BODIES],
 }
 
 /// Owns every Vulkan object. Created once by `new`, cleaned up by `Drop`.
@@ -335,7 +344,7 @@ impl Renderer {
             &device,
             physical_device,
             vk::BufferUsageFlags::UNIFORM_BUFFER,
-            &[[0.0f32; 4]; MAX_BODIES],
+            &[BodiesUniform::zeroed()],
         )?;
 
         // Upload: staging buffer → texture image
@@ -396,7 +405,7 @@ impl Renderer {
         let buffer_info = vk::DescriptorBufferInfo::builder()
             .buffer(bodies_buffer)
             .offset(0)
-            .range(size_of::<[[f32; 4]; MAX_BODIES]>() as u64);
+            .range(size_of::<BodiesUniform>() as u64);
         let buffer_infos = &[buffer_info];
         let bodies_write = vk::WriteDescriptorSet::builder()
             .dst_set(descriptor_set)
@@ -501,7 +510,7 @@ impl Renderer {
         pushes: &[PushConstants],
         ray_push: &RayPushConstants,
         retro: bool,
-        bodies: &[[f32; 4]; MAX_BODIES],
+        bodies: &BodiesUniform,
     ) -> Result<()> {
         unsafe {
             // 1. Wait until the GPU has finished the previous frame, then re-arm the fence
@@ -513,7 +522,7 @@ impl Renderer {
             let ptr = self.device.map_memory(
                 self.bodies_memory,
                 0,
-                size_of::<[[f32; 4]; MAX_BODIES]>() as u64,
+                size_of::<BodiesUniform>() as u64,
                 vk::MemoryMapFlags::empty(),
             )?;
             std::ptr::copy_nonoverlapping(bodies, ptr.cast(), 1);

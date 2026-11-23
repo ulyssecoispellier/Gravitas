@@ -16,6 +16,7 @@ layout(push_constant) uniform Push {
 
 layout(set = 0, binding = 1) uniform Bodies {
     vec4 bodies[16];
+    vec4 colours[16];
 } all_bodies;
 
 // How bright the Sun is compared with a lit planet (HDR: can be much more than 1.0)
@@ -84,7 +85,7 @@ void main() {
         vec3 light_dir = normalize(push.sun.xyz - hit);
         float brightness = max(dot(normal, light_dir), 0.0);
 
-        out_color = vec4(vec3(brightness), 1.0);
+        out_color = vec4(all_bodies.colours[best_index].rgb * brightness, 1.0);
     } else {
         gl_FragDepth = 0.9999;
 

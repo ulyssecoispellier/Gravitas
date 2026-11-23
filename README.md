@@ -46,7 +46,7 @@ It is also a learning project: the goal is to understand Rust and Vulkan from th
 | Post-processing pass (scene drawn offscreen, then a full-screen pass to the screen) | ✅ Done |
 | **Main direction: a path-traced renderer** (physically based light, multiple bounces) | |
 | ↳ 1. HDR: 16-bit float scene image + tone mapping (needed for bright Sun vs dim bounced light) | ✅ Done |
-| ↳ 2. All bodies in the ray pass as analytic spheres (textures from the hit point's UV) | ⬜ Planned |
+| ↳ 2. All bodies in the ray pass as analytic spheres (textures from the hit point's UV) | 🚧 In progress (lit + coloured ✅, texture + shadows next) |
 | ↳ 3. Bounces: random rays per pixel, N bounces, albedo per body (moonlight, earthshine, soft shadows) | ⬜ Planned |
 | ↳ 4. Progressive accumulation (average frames while the camera is still) to remove noise | ⬜ Planned |
 | ↳ 5. Atmospheres in the path tracer: rays scatter inside the air and pick up its colour (blue sky, orange sunsets, hazy gas giants) | ⬜ Planned |
@@ -156,6 +156,7 @@ In debug builds, Vulkan validation messages are printed to the terminal (🟡 wa
 | Right click + drag | Move around (pan) |
 | `R` | Re-centre the camera on the Sun |
 | `C` | Retro dithering on / off |
+| `M` | Show / hide the old mesh planets (compare with the ray-traced ones) |
 
 ---
 

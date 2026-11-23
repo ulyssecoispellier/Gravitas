@@ -25,6 +25,7 @@ layout(set = 0, binding = 0) uniform sampler2D planet_texture;
 // Every body: xyz = position, w = radius (set 0, binding 1, see `bodies_buffer`)
 layout(set = 0, binding = 1) uniform Bodies {
     vec4 bodies[16];
+    vec4 colours[16];
 } all_bodies;
 
 float ray_sphere(vec3 origin, vec3 dir, vec3 center, float radius) {
