@@ -260,7 +260,7 @@ void main() {
         out_color = vec4(light, 1.0);
         
     } else {
-        gl_FragDepth = 0.9999;
+        gl_FragDepth = 0.0;
 
         float u = atan(dir.y, dir.x) / (2.0 * PI);
         float v = acos(dir.z) / PI;

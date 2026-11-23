@@ -727,7 +727,7 @@ impl Renderer {
             // DONT_CARE: the depths are only needed during the frame, not after
             let depth_clear = vk::ClearValue {
                 depth_stencil: vk::ClearDepthStencilValue {
-                    depth: 1.0,
+                    depth: 0.0,
                     stencil: 0,
                 },
             };

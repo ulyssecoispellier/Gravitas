@@ -46,7 +46,11 @@ impl Camera {
     /// The camera's position is a point on a sphere around the target, computed from the angles.
     pub fn view(&self) -> Mat4 {
         // Look from `eye` at the target, with Z as "up"
-        glam::camera::rh::view::look_at_mat4(Vec3::ZERO, (self.target - self.eye()).as_vec3(), Vec3::Z)
+        glam::camera::rh::view::look_at_mat4(
+            Vec3::ZERO,
+            (self.target - self.eye()).as_vec3(),
+            Vec3::Z,
+        )
     }
 
     /// Turns the camera around the target. `dx`/`dy` = mouse movement in pixels.
@@ -64,7 +68,7 @@ impl Camera {
         self.distance *= 1.0 - amount * 0.1;
 
         // Not inside the target, not lost in space
-        self.distance = self.distance.clamp(0.05, 50.0);
+        self.distance = self.distance.clamp(1e-5, 100.0);
     }
 
     /// Widens (`up = true`) or narrows the lens: changes the field of view.
@@ -103,6 +107,6 @@ impl Camera {
     ///
     /// `aspect` = window width / height. It belongs to the window, so it's passed in, not stored.
     pub fn projection(&self, aspect: f32) -> Mat4 {
-        glam::camera::rh::proj::vulkan::perspective(self.fov, aspect, 0.1, 100.0)
+        glam::camera::rh::proj::vulkan::perspective_infinite_reverse(self.fov, aspect, 1e-7)
     }
 }

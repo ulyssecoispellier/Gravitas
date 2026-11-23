@@ -72,7 +72,7 @@ pub(super) fn create_pipeline(
     let depth_stencil = vk::PipelineDepthStencilStateCreateInfo::builder()
         .depth_test_enable(with_depth)
         .depth_write_enable(with_depth)
-        .depth_compare_op(vk::CompareOp::LESS);
+        .depth_compare_op(vk::CompareOp::GREATER_OR_EQUAL);
 
     // No anti-aliasing (1 sample per pixel)
     let multisample = vk::PipelineMultisampleStateCreateInfo::builder()
