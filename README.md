@@ -8,7 +8,7 @@ N-body gravity · ray-traced Sun and planets · eclipses · HDR · a free-flying
 
 ![Rust](https://img.shields.io/badge/Rust-2024-orange?logo=rust)
 ![Vulkan](https://img.shields.io/badge/Vulkan-1.3-red?logo=vulkan)
-![Platform](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-lightgrey?logo=apple)
+![Platform](https://img.shields.io/badge/platform-macOS%20(tested)%20·%20Windows%20·%20Linux%20(planned)-lightgrey)
 ![Status](https://img.shields.io/badge/status-learning%20project-blue)
 
 </div>
@@ -121,6 +121,16 @@ Physically based light with multiple bounces.
 | Asteroid belt + Kuiper belt: thousands of rocks in one draw call (GPU instancing) | ⬜ |
 | Skybox: starfield / Milky Way background | ⬜ |
 | Soft shadows: the Sun as a disc (umbra cone, penumbra, annular eclipses) | ⬜ |
+
+### 💻 Cross-platform (Windows · Linux · macOS)
+| | Status |
+|---|---|
+| Handle `ERROR_OUT_OF_DATE_KHR` / `SUBOPTIMAL_KHR` in `draw_frame` (acquire + present): rebuild the swapchain and skip the frame instead of crashing on resize/minimize | ⬜ |
+| Don't draw while the window is minimized (size 0) | ⬜ |
+| Pick the swapchain format and present mode from what the driver offers, with fallbacks | ⬜ |
+| Load textures relative to the executable / project, not the current folder | ⬜ |
+| Setup instructions for Windows (LunarG Vulkan SDK) and Linux (distro packages) | ⬜ |
+| Test on a Windows or Linux machine (NVIDIA / AMD / Intel) | ⬜ |
 
 ### 🧪 Physics & ideas
 | | Status |
