@@ -19,8 +19,11 @@ layout(set = 0, binding = 1) uniform Bodies {
     vec4 colours[16];
 } all_bodies;
 
+layout(set = 0, binding = 2) uniform sampler2D sky;
+
 // How bright the Sun is compared with a lit planet (HDR: can be much more than 1.0)
 const float SUN_INTENSITY = 4.0;
+const float PI = 3.14159265;
 
 // Distance along the ray to the nearest hit, or -1.0 if it misses (same as ray.rs)
 float ray_sphere(vec3 origin, vec3 dir, vec3 center, float radius) {
@@ -111,8 +114,12 @@ void main() {
     } else {
         gl_FragDepth = 0.9999;
 
-        // Miss: black space
-        out_color = vec4(0.0, 0.0, 0.0, 1.0);
+        float u = atan(dir.y, dir.x) / (2.0 * PI);
+        float v = acos(dir.z) / PI;
+        vec3 stars = texture(sky, vec2(u, v)).rgb;
+        
+        // Miss: the sky. Ray direction → equirectangular UV (Z is up)
+        out_color = vec4(stars, 1.0);
     }
 
     // Dithering: tiny per-pixel noise hides the 256-level steps (banding)

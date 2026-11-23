@@ -265,10 +265,19 @@ impl Renderer {
             .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
             .descriptor_count(1)
             .stage_flags(vk::ShaderStageFlags::FRAGMENT);
+        // Binding 2: the sky texture (equirectangular star map), fragment shader
+        let sky_binding = vk::DescriptorSetLayoutBinding::builder()
+            .binding(2)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT);
         let descriptor_set_layout = unsafe {
             device.create_descriptor_set_layout(
-                &vk::DescriptorSetLayoutCreateInfo::builder()
-                    .bindings(&[sampler_binding, bodies_binding]),
+                &vk::DescriptorSetLayoutCreateInfo::builder().bindings(&[
+                    sampler_binding,
+                    bodies_binding,
+                    sky_binding,
+                ]),
                 None,
             )?
         };
@@ -368,10 +377,10 @@ impl Renderer {
             .mipmap_mode(vk::SamplerMipmapMode::LINEAR);
         let sampler = unsafe { device.create_sampler(&sampler_info, None)? };
 
-        // Descriptor pool: 2 sets (planet texture, scene image), 1 image + sampler each
+        // Descriptor pool: 2 sets (planets, post), each with 2 image + sampler slots and 1 uniform buffer
         let pool_size = vk::DescriptorPoolSize::builder()
             .type_(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .descriptor_count(2);
+            .descriptor_count(4);
         let uniform_pool_size = vk::DescriptorPoolSize::builder()
             .type_(vk::DescriptorType::UNIFORM_BUFFER)
             .descriptor_count(2);
@@ -392,7 +401,8 @@ impl Renderer {
                     .set_layouts(&[descriptor_set_layout]),
             )?
         }[0];
-        write_image_descriptor(&device, descriptor_set, sampler, texture_view);
+        write_image_descriptor(&device, descriptor_set, 0, sampler, texture_view);
+        write_image_descriptor(&device, descriptor_set, 2, sampler, sky_view);
 
         // Binding 1 of the planets' set → the bodies buffer
         let buffer_info = vk::DescriptorBufferInfo::builder()
@@ -415,7 +425,7 @@ impl Renderer {
                     .set_layouts(&[descriptor_set_layout]),
             )?
         }[0];
-        write_image_descriptor(&device, post_descriptor_set, sampler, scene_view);
+        write_image_descriptor(&device, post_descriptor_set, 0, sampler, scene_view);
 
         // 8. A unit sphere (radius 1), uploaded to the GPU. Drawn once per body, scaled to its radius
         let (sphere_vertices, sphere_indices) = uv_sphere(128, 64, 1.0, [0.0, 0.0, 0.0]);
@@ -916,6 +926,7 @@ impl Renderer {
             write_image_descriptor(
                 &self.device,
                 self.post_descriptor_set,
+                0,
                 self.sampler,
                 self.scene_view,
             );

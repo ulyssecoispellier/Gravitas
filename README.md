@@ -124,7 +124,8 @@ Physically based light with multiple bounces.
 | Major moons on "on rails" orbits (Moon, Phobos & Deimos, Galilean moons, Titan…) + their textures | ⬜ |
 | Saturn's rings: flat disk mesh + transparent striped texture | ⬜ |
 | Asteroid belt + Kuiper belt: thousands of rocks in one draw call (GPU instancing) | ⬜ |
-| Skybox: starfield / Milky Way background (NASA Deep Star Maps, `textures/sky.exr`) | 🚧 |
+| Skybox: starfield / Milky Way background (NASA Deep Star Maps, `textures/sky.exr`) | ✅ |
+| Rotate the sky from galactic to ecliptic coordinates (real Milky Way orientation) | ⬜ |
 | Soft shadows: the Sun as a disc (umbra cone, penumbra, annular eclipses) | ⬜ |
 
 ### 💻 Cross-platform (Windows · Linux · macOS)
