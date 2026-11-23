@@ -85,6 +85,28 @@ void main() {
         vec3 light_dir = normalize(push.sun.xyz - hit);
         float brightness = max(dot(normal, light_dir), 0.0);
 
+        // Shadow rays: from this pixel towards the Sun. Does another body block the way?
+        float sun_dist = length(push.sun.xyz - hit);
+        for (int i = 1; i < 16; i++) {   // from 1: body 0 is the Sun itself
+            vec4 other = all_bodies.bodies[i];
+    
+            if (other.w == 0.0) { continue; }
+            if (i == best_index) { continue; }
+    
+            vec3 to_blocker = other.xyz - hit;
+            float blocker_dist = length(to_blocker);
+            if (blocker_dist > sun_dist) { continue; }           // beyond the Sun: can't shade us
+            
+            float a_sun = asin(clamp(all_bodies.bodies[0].w / sun_dist, 0.0, 1.0)); // body 0 = the Sun
+            float a_b   = asin(clamp(other.w / blocker_dist, 0.0, 1.0));
+            float theta = acos(clamp(dot(normalize(to_blocker), light_dir), -1.0, 1.0));
+            
+            // How much of the Sun is hidden: 0 = none, up to 1 = all of it
+            float max_cover = min(1.0, (a_b * a_b) / (a_sun * a_sun));
+            float cover = (1.0 - smoothstep(abs(a_sun - a_b), a_sun + a_b, theta)) * max_cover;
+            brightness *= 1.0 - cover;
+        }
+        
         out_color = vec4(all_bodies.colours[best_index].rgb * brightness, 1.0);
     } else {
         gl_FragDepth = 0.9999;
