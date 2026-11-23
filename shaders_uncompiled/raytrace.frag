@@ -62,6 +62,35 @@ vec2 ray_sphere_both(vec3 origin, vec3 dir, vec3 center, float radius) {
     return vec2(-projection - s, -projection + s);
 }
 
+// Fraction of the Sun visible from `point` (1 = all, 0 = fully eclipsed), soft cones from every body but `skip`
+float sun_visibility(vec3 point, int skip) {
+    vec3 light_dir = normalize(push.sun.xyz - point);
+    float sun_dist = length(push.sun.xyz - point);
+    float vis = 1.0;
+
+    for (int i = 1; i < 16; i++) {   // from 1: body 0 is the Sun itself
+        vec4 other = all_bodies.bodies[i];
+
+        if (other.w == 0.0) { continue; }
+        if (i == skip) { continue; }
+
+        vec3 to_blocker = other.xyz - point;
+        float blocker_dist = length(to_blocker);
+        if (blocker_dist > sun_dist) { continue; }           // beyond the Sun: can't shade us
+
+        float a_sun = asin(clamp(all_bodies.bodies[0].w / sun_dist, 0.0, 1.0)); // body 0 = the Sun
+        float a_b   = asin(clamp(other.w / blocker_dist, 0.0, 1.0));
+        float theta = acos(clamp(dot(normalize(to_blocker), light_dir), -1.0, 1.0));
+
+        // How much of the Sun is hidden: 0 = none, up to 1 = all of it
+        float max_cover = min(1.0, (a_b * a_b) / (a_sun * a_sun));
+        float cover = (1.0 - smoothstep(abs(a_sun - a_b), a_sun + a_b, theta)) * max_cover;
+        vis *= 1.0 - cover;
+    }
+
+    return vis;
+}
+
 void main() {
     // The point far away behind this pixel, in the world (screen → world)
     vec4 far = inverse(push.view_proj) * vec4(screen_pos, 1.0, 1.0);
@@ -111,27 +140,8 @@ void main() {
         vec3 light_dir = normalize(push.sun.xyz - hit);
         float brightness = max(dot(normal, light_dir), 0.0);
 
-        // Shadow rays: from this pixel towards the Sun. Does another body block the way?
-        float sun_dist = length(push.sun.xyz - hit);
-        for (int i = 1; i < 16; i++) {   // from 1: body 0 is the Sun itself
-            vec4 other = all_bodies.bodies[i];
-    
-            if (other.w == 0.0) { continue; }
-            if (i == best_index) { continue; }
-    
-            vec3 to_blocker = other.xyz - hit;
-            float blocker_dist = length(to_blocker);
-            if (blocker_dist > sun_dist) { continue; }           // beyond the Sun: can't shade us
-            
-            float a_sun = asin(clamp(all_bodies.bodies[0].w / sun_dist, 0.0, 1.0)); // body 0 = the Sun
-            float a_b   = asin(clamp(other.w / blocker_dist, 0.0, 1.0));
-            float theta = acos(clamp(dot(normalize(to_blocker), light_dir), -1.0, 1.0));
-            
-            // How much of the Sun is hidden: 0 = none, up to 1 = all of it
-            float max_cover = min(1.0, (a_b * a_b) / (a_sun * a_sun));
-            float cover = (1.0 - smoothstep(abs(a_sun - a_b), a_sun + a_b, theta)) * max_cover;
-            brightness *= 1.0 - cover;
-        }
+        // Eclipses: other bodies hiding part of the Sun (soft cones)
+        brightness *= sun_visibility(hit, best_index);
         
         vec3 base = mix(all_bodies.colours[best_index].rgb, texture(planet_texture, vec2(pu, pv)).rgb, all_bodies.colours[best_index].w);
         out_color = vec4(base * brightness, 1.0);
@@ -189,6 +199,9 @@ void main() {
             // The planet hides the Sun from this sample: night side, no scattering
             if (ray_sphere(p, sun_dir, body.xyz, R) > 0.0) { continue; }
 
+            // Other bodies eclipsing the Sun for this sample (e.g. Titan in Saturn's shadow)
+            float vis = sun_visibility(p, i);
+
             // Light march: optical depth from p to the top of the atmosphere, towards the Sun
             vec2 light = ray_sphere_both(p, sun_dir, body.xyz, R * atmo.w);
             float l_ds = light.y / LIGHT_STEPS;
@@ -211,8 +224,8 @@ void main() {
             float phase_m = (1.0 - g * g) / ( (4.0 * PI) * pow(1.0 + g * g - 2.0 * g * mu, 1.5));
 
             // Light scattered at p, dimmed on both legs (distances in planet radii, the same unit as β)
-            scatter_r += density * ds / R * T * phase_r;
-            scatter_m += density * ds / R * T * phase_m;
+            scatter_r += density * ds / R * T * phase_r * vis;
+            scatter_m += density * ds / R * T * phase_m * vis;
         }
 
         // What lies behind the gas (ground, stars, Sun) is seen through all of it

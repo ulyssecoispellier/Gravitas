@@ -126,7 +126,7 @@ Physically based light with multiple bounces.
 | 2 | All bodies in the ray pass as analytic spheres (lit, coloured, Earth textured, soft eclipses) | ✅ |
 | 3 | Bounces: random rays, albedo per body (moonlight, earthshine, twilight lighting the ground, soft shadows) | ⬜ |
 | 4 | Progressive accumulation to remove noise while the camera is still | ⬜ |
-| 5 | Atmospheres: rays scatter in the air and pick up its colour (blue sky, orange sunsets, hazy gas giants) — single scattering: Rayleigh (molecules) + Mie (dust, droplets), per-planet β, density, planet shadow, extinction, phase functions, jitter | ✅ |
+| 5 | Atmospheres: rays scatter in the air and pick up its colour (blue sky, orange sunsets, hazy gas giants) — single scattering: Rayleigh (molecules) + Mie (dust, droplets), per-planet β, density, planet shadow, eclipses from other bodies, extinction, phase functions, jitter | ✅ |
 | 6 | Bloom on top of the HDR image — v1 ✅ (13×13 blur in the post pass), v2: downsampled blur chain for wide halos | 🚧 |
 | 7 | Auto-exposure: the image adapts to dark scenes like an eye or a camera (night sides become visible) | ⬜ |
 
@@ -136,6 +136,8 @@ Physically based light with multiple bounces.
 | Earth: real 8k day map in the ray pass (UV from the hit normal) | ✅ |
 | Earth: normal map + specular (ocean glints) | ⬜ |
 | Earth: city lights on the night side (night map, shown where sunlight ≈ 0) | ⬜ |
+| Earth: cloud layer (8k clouds map) on top of the day map, so its average albedo is a realistic ~0.3 | ⬜ |
+| Real average albedos for every body's base colour (Moon ≈ 0.12, Venus ≈ 0.75, Europa ≈ 0.65…), needed for physical bounces | ⬜ |
 | Texture array: one layer per body (planets + moons), `colours.w` = layer index; base colour kept as albedo for bounces | ⬜ |
 | Real maps for every body (Solar System Scope; NASA/USGS for Galilean moons, Titan, Triton) + normal maps for rocky bodies | ⬜ |
 | Axial tilt + rotation per planet (Venus upside down, Uranus on its side, both spinning backwards) | ⬜ |

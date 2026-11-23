@@ -126,58 +126,83 @@ struct MoonData {
     radius: f64,
     /// Base colour (r, g, b), also its average albedo
     colour: [f32; 3],
+    /// Atmosphere: rgb = scattering strength per colour (β, per moon radius), w = outer radius ÷ moon radius (0 = none)
+    atmosphere: [f32; 4],
+    /// Haze (Mie: dust, droplets): rgb = scattering strength per colour (β), w = forward bias g (0 = even, → 1 = forward)
+    haze: [f32; 4],
 }
 
 /// Major moons, written to GPU slots 9..15 every frame. Periods keep the real ratios (Earth's year ≈ 17.8 s)
 const MOONS: [MoonData; 7] = [
+    // Moon (Earth)
     MoonData {
         parent: 3,
         distance: 0.2,
         period: 1.33,
         radius: 0.022,
         colour: [0.6, 0.6, 0.58],
+        atmosphere: [0.0, 0.0, 0.0, 0.0],
+        haze: [0.0, 0.0, 0.0, 0.0],
     },
+    // Io (Jupiter)
     MoonData {
         parent: 5,
         distance: 0.35,
         period: 0.086,
         radius: 0.030,
         colour: [0.9, 0.8, 0.4],
+        atmosphere: [0.0, 0.0, 0.0, 0.0],
+        haze: [0.0, 0.0, 0.0, 0.0],
     },
+    // Europa (Jupiter)
     MoonData {
         parent: 5,
         distance: 0.42,
         period: 0.173,
         radius: 0.026,
         colour: [0.85, 0.8, 0.7],
+        atmosphere: [0.0, 0.0, 0.0, 0.0],
+        haze: [0.0, 0.0, 0.0, 0.0],
     },
+    // Ganymede (Jupiter)
     MoonData {
         parent: 5,
         distance: 0.52,
         period: 0.348,
         radius: 0.040,
         colour: [0.6, 0.55, 0.5],
+        atmosphere: [0.0, 0.0, 0.0, 0.0],
+        haze: [0.0, 0.0, 0.0, 0.0],
     },
+    // Callisto (Jupiter)
     MoonData {
         parent: 5,
         distance: 0.68,
         period: 0.81,
         radius: 0.037,
         colour: [0.4, 0.37, 0.33],
+        atmosphere: [0.0, 0.0, 0.0, 0.0],
+        haze: [0.0, 0.0, 0.0, 0.0],
     },
+    // Titan (Saturn)
     MoonData {
         parent: 6,
         distance: 0.40,
         period: 0.77,
         radius: 0.035,
         colour: [0.8, 0.6, 0.3],
+        atmosphere: [0.3, 0.4, 0.6, 1.3],
+        haze: [1.5, 1.0, 0.4, 0.6],
     },
+    // Triton (Neptune, retrograde)
     MoonData {
         parent: 8,
         distance: 0.22,
         period: -0.286,
         radius: 0.025,
         colour: [0.75, 0.7, 0.7],
+        atmosphere: [0.0, 0.0, 0.0, 0.0],
+        haze: [0.0, 0.0, 0.0, 0.0],
     },
 ];
 
@@ -416,6 +441,14 @@ impl ApplicationHandler for App {
                             [x as f32, y as f32, z as f32, moon.radius as f32];
                         bodies_data.colours[slot] =
                             [moon.colour[0], moon.colour[1], moon.colour[2], 0.0];
+                        bodies_data.atmospheres[slot] = [
+                            moon.atmosphere[0],
+                            moon.atmosphere[1],
+                            moon.atmosphere[2],
+                            moon.atmosphere[3],
+                        ];
+                        bodies_data.haze[slot] =
+                            [moon.haze[0], moon.haze[1], moon.haze[2], moon.haze[3]];
                     }
 
                     renderer
