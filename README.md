@@ -140,14 +140,19 @@ Physically based light with multiple bounces.
 | Real average albedos for every body's base colour (Moon ≈ 0.12, Venus ≈ 0.75, Europa ≈ 0.65…), needed for physical bounces | ⬜ |
 | Texture array: one layer per body (planets + moons), `colours.w` = layer index; base colour kept as albedo for bounces | ⬜ |
 | Real maps for every body (Solar System Scope; NASA/USGS for Galilean moons, Titan, Triton) + normal maps for rocky bodies | ⬜ |
-| Axial tilt + rotation per planet (Venus upside down, Uranus on its side, both spinning backwards) | ⬜ |
+| Axial tilt + rotation per planet (Earth 23.4°, Venus upside down, Uranus on its side; real day lengths), textures turning with them | ⬜ |
 | Major moons on rails: Moon, Io, Europa, Ganymede, Callisto, Titan, Triton (retrograde) | ✅ |
 | More moons (Phobos & Deimos, …): needs more than 16 body slots | ⬜ |
+| Tilted moon orbits: an inclination per moon (Moon ≈ 5° to the ecliptic, so eclipses are rare; Triton ≈ 157°), plus each planet's axial tilt for its equatorial moons | ⬜ |
+| Moons spin too: each has its own rotation, and its texture turns with it | ⬜ |
+| Tidal locking: the Moon, the Galilean moons, Titan and Triton spin exactly once per orbit, so they always show the same face to their planet | ⬜ |
+| Elliptical moon orbits (eccentricity) + the direction the tilt points (ascending node), from real orbital elements | ⬜ |
+| Real orbital elements for the planets too (eccentricity, inclination), so they start where they really are on a given date | ⬜ |
 | Saturn's rings: flat disk mesh + transparent striped texture | ⬜ |
 | Asteroid belt + Kuiper belt: thousands of rocks in one draw call (GPU instancing) | ⬜ |
 | Skybox: starfield / Milky Way background (NASA Deep Star Maps, `textures/sky.exr`) | ✅ |
 | Rotate the sky from galactic to ecliptic coordinates (real Milky Way orientation) | ⬜ |
-| Soft shadows: the Sun as a disc (umbra cone, penumbra, annular eclipses) | ⬜ |
+| Soft shadows: the Sun as a disc (umbra cone, penumbra, annular eclipses), on surfaces and in atmospheres | ✅ |
 
 ### 🔭 Real scale & navigation (later)
 | | Status |

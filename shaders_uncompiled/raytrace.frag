@@ -91,6 +91,25 @@ float sun_visibility(vec3 point, int skip) {
     return vis;
 }
 
+// Surface colour of body `index` at `point`: its texture where it has one (colours.w = 1), else its base colour
+vec3 albedo(int index, vec3 point) {
+    vec3 normal = normalize(point - all_bodies.bodies[index].xyz);
+    float pu = atan(normal.y, normal.x) / (2.0 * PI);
+    float pv = acos(normal.z) / PI;
+    return mix(all_bodies.colours[index].rgb, texture(planet_texture, vec2(pu, pv)).rgb, all_bodies.colours[index].w);
+}
+
+// Light that `point` on body `index` reflects from the Sun alone: albedo × facing × eclipses
+vec3 direct_light(int index, vec3 point) {
+    vec3 normal = normalize(point - all_bodies.bodies[index].xyz);
+    vec3 light_dir = normalize(push.sun.xyz - point);
+    float brightness = max(dot(normal, light_dir), 0.0);
+
+    brightness *= sun_visibility(point, index);
+
+    return albedo(index, point) * brightness;
+}
+
 void main() {
     // The point far away behind this pixel, in the world (screen → world)
     vec4 far = inverse(push.view_proj) * vec4(screen_pos, 1.0, 1.0);
@@ -133,18 +152,8 @@ void main() {
         vec4 clip = push.view_proj * vec4(hit, 1.0);
         gl_FragDepth = clip.z / clip.w;
 
-        // Diffuse lighting: how much this point faces the Sun
-        vec3 normal = normalize(hit - all_bodies.bodies[best_index].xyz);
-        float pu = atan(normal.y, normal.x) / (2.0 * PI);
-        float pv = acos(normal.z) / PI;
-        vec3 light_dir = normalize(push.sun.xyz - hit);
-        float brightness = max(dot(normal, light_dir), 0.0);
-
-        // Eclipses: other bodies hiding part of the Sun (soft cones)
-        brightness *= sun_visibility(hit, best_index);
-        
-        vec3 base = mix(all_bodies.colours[best_index].rgb, texture(planet_texture, vec2(pu, pv)).rgb, all_bodies.colours[best_index].w);
-        out_color = vec4(base * brightness, 1.0);
+        // Direct sunlight reflected by the surface
+        out_color = vec4(direct_light(best_index, hit), 1.0);
         
     } else {
         gl_FragDepth = 0.9999;
