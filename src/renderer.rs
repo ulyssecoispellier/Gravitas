@@ -164,8 +164,10 @@ pub struct Renderer {
     sky_image: vk::Image,
     sky_memory: vk::DeviceMemory,
     sky_view: vk::ImageView,
-    /// Sampler for `texture_view`
+    /// Sampler for the Earth and sky textures: u wraps (longitude), v clamped (poles)
     sampler: vk::Sampler,
+    /// Sampler for the scene image in the post pass: clamps on every edge (the screen does not wrap)
+    post_sampler: vk::Sampler,
     /// Layout of set 0: binding 0 = texture + sampler
     descriptor_set_layout: vk::DescriptorSetLayout,
     /// Pool for `descriptor_set`
@@ -377,6 +379,16 @@ impl Renderer {
             .mipmap_mode(vk::SamplerMipmapMode::LINEAR);
         let sampler = unsafe { device.create_sampler(&sampler_info, None)? };
 
+        // Post-pass sampler: clamp everywhere, so bloom near an edge never reads the opposite edge
+        let post_sampler_info = vk::SamplerCreateInfo::builder()
+            .mag_filter(vk::Filter::LINEAR)
+            .min_filter(vk::Filter::LINEAR)
+            .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+            .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+            .address_mode_w(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+            .mipmap_mode(vk::SamplerMipmapMode::LINEAR);
+        let post_sampler = unsafe { device.create_sampler(&post_sampler_info, None)? };
+
         // Descriptor pool: 2 sets (planets, post), each with 2 image + sampler slots and 1 uniform buffer
         let pool_size = vk::DescriptorPoolSize::builder()
             .type_(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
@@ -425,7 +437,7 @@ impl Renderer {
                     .set_layouts(&[descriptor_set_layout]),
             )?
         }[0];
-        write_image_descriptor(&device, post_descriptor_set, 0, sampler, scene_view);
+        write_image_descriptor(&device, post_descriptor_set, 0, post_sampler, scene_view);
 
         // 8. A unit sphere (radius 1), uploaded to the GPU. Drawn once per body, scaled to its radius
         let (sphere_vertices, sphere_indices) = uv_sphere(128, 64, 1.0, [0.0, 0.0, 0.0]);
@@ -498,6 +510,7 @@ impl Renderer {
             sky_memory,
             sky_view,
             sampler,
+            post_sampler,
             descriptor_set_layout,
             descriptor_pool,
             descriptor_set,
@@ -927,7 +940,7 @@ impl Renderer {
                 &self.device,
                 self.post_descriptor_set,
                 0,
-                self.sampler,
+                self.post_sampler,
                 self.scene_view,
             );
         }
@@ -963,7 +976,8 @@ impl Drop for Renderer {
             self.device.destroy_image_view(self.sky_view, None);
             self.device.destroy_image(self.sky_image, None);
             self.device.free_memory(self.sky_memory, None);
-            // Sampler + descriptors (the pool frees its sets)
+            // Samplers + descriptors (the pool frees its sets)
+            self.device.destroy_sampler(self.post_sampler, None);
             self.device.destroy_sampler(self.sampler, None);
             self.device
                 .destroy_descriptor_pool(self.descriptor_pool, None);

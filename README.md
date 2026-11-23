@@ -101,10 +101,12 @@ Shaders are compiled automatically: `build.rs` runs `glslc` on every file in `sh
 ```
 ① scene pass ──▶ scene image (HDR, 16-bit float)
    ├─ ray pass: a full-screen triangle; each pixel shoots a ray from the camera,
-   │            finds the closest body, and shades it (Sun, planets, glow)
+   │            finds the closest body and shades it (Sun, planets, Earth texture);
+   │            rays that miss read the NASA star map (skybox)
    └─ mesh pass (optional, M): the old rasterized planets, with texture + eclipses
 ② post pass ──▶ swapchain image ──▶ screen
-   └─ ACES tone mapping (HDR → 0..1), optional retro dithering
+   └─ bloom (bright pixels leak onto neighbours), ACES tone mapping (HDR → 0..1),
+      optional retro dithering
 ```
 - **Shader data**: small per-draw data travels as **push constants**; data shared by every pixel (all bodies' positions, radii and colours) lives in a **uniform buffer** updated every frame.
 - **No hardware ray tracing needed**: ray–sphere intersection is plain maths in a fragment shader, so it runs on any Vulkan GPU, including Apple Silicon through MoltenVK.
@@ -119,7 +121,7 @@ Physically based light with multiple bounces.
 | Step | | Status |
 |---|---|---|
 | 1 | HDR scene image + tone mapping | ✅ |
-| 2 | All bodies in the ray pass as analytic spheres | 🚧 lit + coloured ✅ · texture and eclipses next |
+| 2 | All bodies in the ray pass as analytic spheres (lit, coloured, Earth textured, soft eclipses) | ✅ |
 | 3 | Bounces: random rays, albedo per body (moonlight, earthshine, soft shadows) | ⬜ |
 | 4 | Progressive accumulation to remove noise while the camera is still | ⬜ |
 | 5 | Atmospheres: rays scatter in the air and pick up its colour (blue sky, orange sunsets, hazy gas giants) | ⬜ |
