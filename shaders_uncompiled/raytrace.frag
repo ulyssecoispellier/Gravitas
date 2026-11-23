@@ -111,21 +111,8 @@ void main() {
     } else {
         gl_FragDepth = 0.9999;
 
-        // Closest distance between this ray and the Sun's centre
-        float along = dot(push.sun.xyz - origin, dir);
-        vec3 closest = origin + along * dir;
-        float d = length(push.sun.xyz - closest);
-
-        // Glow: 0.4 at the Sun's edge (matches the limb), fading fast with distance from the surface
-        float glow = exp(-(d - push.sun.w) / (0.15 * push.sun.w)) * 0.4;
-
-        // Sun behind the camera: no glow
-        if (along < 0.0) {
-            glow = 0.0;
-        }
-
-        // Miss: black space + the Sun's glow
-        out_color = vec4(vec3(1.0, 0.97, 0.92) * glow * SUN_INTENSITY, 1.0);
+        // Miss: black space
+        out_color = vec4(0.0, 0.0, 0.0, 1.0);
     }
 
     // Dithering: tiny per-pixel noise hides the 256-level steps (banding)
