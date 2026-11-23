@@ -421,7 +421,7 @@ impl ApplicationHandler for App {
                             self.colours[i][0],
                             self.colours[i][1],
                             self.colours[i][2],
-                            if i == EARTH { 1.0 } else { 0.0 },
+                            if i == 0 { 0.0 } else { 1.0 },
                         ];
                         bodies_data.atmospheres[i] = self.atmospheres[i];
                         bodies_data.haze[i] = self.haze[i];
@@ -440,7 +440,7 @@ impl ApplicationHandler for App {
                         bodies_data.bodies[slot] =
                             [x as f32, y as f32, z as f32, moon.radius as f32];
                         bodies_data.colours[slot] =
-                            [moon.colour[0], moon.colour[1], moon.colour[2], 0.0];
+                            [moon.colour[0], moon.colour[1], moon.colour[2], 1.0];
                         bodies_data.atmospheres[slot] = [
                             moon.atmosphere[0],
                             moon.atmosphere[1],

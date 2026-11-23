@@ -21,7 +21,7 @@ layout(push_constant) uniform Push {
 } push;
 
 // Rocky planet texture (set 0, binding 0)
-layout(set = 0, binding = 0) uniform sampler2D planet_texture;
+layout(set = 0, binding = 0) uniform sampler2DArray planet_texture;
 // Every body: xyz = position, w = radius (set 0, binding 1, see `bodies_buffer`)
 layout(set = 0, binding = 1) uniform Bodies {
     vec4 bodies[16];
@@ -78,7 +78,7 @@ void main() {
     brightness = max(brightness, push.info.y);
 
     // Base colour: texture if info.z = 1, else the body's colour
-    vec3 base = mix(push.colour.rgb, texture(planet_texture, frag_uv).rgb, push.info.z);
+    vec3 base = mix(push.colour.rgb, texture(planet_texture, vec3(frag_uv, 2.0)).rgb, push.info.z);
 
     out_color = vec4(base * brightness, 1.0);
 }

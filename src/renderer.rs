@@ -46,6 +46,24 @@ const VALIDATION_LAYER: vk::ExtensionName =
 pub const MAX_BODIES: usize = 16;
 /// Format of the scene image: 16-bit floats per channel, so light can go above 1.0 (HDR)
 const HDR_FORMAT: vk::Format = vk::Format::R16G16B16A16_SFLOAT;
+/// Albedo maps, one texture-array layer each, in GPU body-slot order (layer = slot − 1)
+const BODY_TEXTURES: [&str; 15] = [
+    "textures/mercury/albedo.jpg",
+    "textures/venus/albedo.jpg",
+    "textures/earth/albedo.jpg",
+    "textures/mars/albedo.jpg",
+    "textures/jupiter/albedo.jpg",
+    "textures/saturn/albedo.jpg",
+    "textures/uranus/albedo.jpg",
+    "textures/neptune/albedo.jpg",
+    "textures/earth/satellites/moon/albedo.jpg",
+    "textures/jupiter/satellites/io/albedo.jpg",
+    "textures/jupiter/satellites/europa/albedo.jpg",
+    "textures/jupiter/satellites/ganymede/albedo.jpg",
+    "textures/jupiter/satellites/callisto/albedo.jpg",
+    "textures/saturn/satellites/titan/albedo.jpg",
+    "textures/neptune/satellites/triton/albedo.jpg",
+];
 
 /// The data sent to the shaders for each body drawn (through push constants).
 #[repr(C)]
@@ -215,7 +233,7 @@ impl Renderer {
             DEPTH_FORMAT,
             vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
             vk::ImageAspectFlags::DEPTH,
-            1
+            1,
         )?;
 
         // Offscreen image: the scene is drawn here, then read by the post pass
@@ -227,7 +245,7 @@ impl Renderer {
             HDR_FORMAT,
             vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
             vk::ImageAspectFlags::COLOR,
-            1
+            1,
         )?;
 
         // 4. Where we record drawing commands
@@ -330,10 +348,16 @@ impl Renderer {
             true,
         )?;
 
-        // 7. Earth texture (Solar System Scope 8k day map): load as RGBA8
+        /* // 7. Earth texture (Solar System Scope 8k day map): load as RGBA8
         let img = image::open("textures/earth/albedo.jpg")?.to_rgba8();
         let (tex_width, tex_height) = img.dimensions();
-        let pixels = img.into_raw();
+        let pixels = img.into_raw(); */
+
+        let mut pixels: Vec<u8> = Vec::new();
+        for path in BODY_TEXTURES {
+            let img = image::open(path)?.to_rgba8();
+            pixels.extend(img.into_raw());
+        }
 
         // Uniform buffer: every body's position + radius, read by the planets' shader (shadows)
         let (bodies_buffer, bodies_memory) = create_buffer(
@@ -351,9 +375,9 @@ impl Renderer {
             graphics_queue,
             command_pool,
             &pixels,
-            tex_width,
-            tex_height,
-            1,
+            4096,
+            2048,
+            BODY_TEXTURES.len() as u32,
             vk::Format::R8G8B8A8_SRGB,
         )?;
 
@@ -932,7 +956,7 @@ impl Renderer {
                 DEPTH_FORMAT,
                 vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
                 vk::ImageAspectFlags::DEPTH,
-                1
+                1,
             )?;
 
             // New scene image, and point the post pass at it
@@ -944,7 +968,7 @@ impl Renderer {
                 HDR_FORMAT,
                 vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
                 vk::ImageAspectFlags::COLOR,
-                1
+                1,
             )?;
             write_image_descriptor(
                 &self.device,

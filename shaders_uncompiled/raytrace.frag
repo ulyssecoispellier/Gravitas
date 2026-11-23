@@ -22,7 +22,7 @@ layout(set = 0, binding = 1) uniform Bodies {
 } all_bodies;
 
 layout(set = 0, binding = 2) uniform sampler2D sky;
-layout(set = 0, binding = 0) uniform sampler2D planet_texture;
+layout(set = 0, binding = 0) uniform sampler2DArray planet_texture;
 
 // How bright the Sun is compared with a lit planet (HDR: can be much more than 1.0)
 const float SUN_INTENSITY = 4.0;
@@ -97,18 +97,22 @@ vec3 albedo(int index, vec3 point) {
     vec3 normal = normalize(point - all_bodies.bodies[index].xyz);
     float pu = atan(normal.y, normal.x) / (2.0 * PI);
     float pv = acos(normal.z) / PI;
-    return mix(all_bodies.colours[index].rgb, texture(planet_texture, vec2(pu, pv)).rgb, all_bodies.colours[index].w);
+    float layer = float(index - 1);
+    vec3 tex = texture(planet_texture, vec3(pu, pv, layer)).rgb;
+    return mix(all_bodies.colours[index].rgb, tex, all_bodies.colours[index].w);
 }
 
-// Light that `point` on body `index` reflects from the Sun alone: albedo × facing × eclipses
-vec3 direct_light(int index, vec3 point) {
+// How much sunlight reaches `point` on body `index`: facing (0..1) × eclipses, no colour
+float sunlight(int index, vec3 point) {
     vec3 normal = normalize(point - all_bodies.bodies[index].xyz);
     vec3 light_dir = normalize(push.sun.xyz - point);
     float brightness = max(dot(normal, light_dir), 0.0);
+    return brightness * sun_visibility(point, index);
+}
 
-    brightness *= sun_visibility(point, index);
-
-    return albedo(index, point) * brightness;
+// Light that `point` on body `index` reflects from the Sun alone: textured albedo × sunlight
+vec3 direct_light(int index, vec3 point) {
+    return albedo(index, point) * sunlight(index, point);
 }
 
 // Random direction above a surface (cosine-weighted: near the normal more often), from two numbers in [0, 1)
@@ -198,7 +202,8 @@ vec3 bounce_light(int self_index, vec3 point, float r1, float r2) {
             if (hit_j != j) { continue; }
 
             vec3 b = start + t * ray;
-            total += direct_light(j, b) * cos_theta * omega / PI / float(BOUNCE_SAMPLES);
+            // The source body's average colour (its texture details blur together from afar: no noise)
+            total += all_bodies.colours[j].rgb * sunlight(j, b) * cos_theta * omega / PI / float(BOUNCE_SAMPLES);
         }
     }
 

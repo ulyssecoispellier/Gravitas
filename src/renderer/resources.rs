@@ -126,7 +126,11 @@ pub(super) fn create_image(
         .layer_count(layers);
     let view_info = vk::ImageViewCreateInfo::builder()
         .image(image)
-        .view_type(if layers > 1 { vk::ImageViewType::_2D_ARRAY } else { vk::ImageViewType::_2D })
+        .view_type(if layers > 1 {
+            vk::ImageViewType::_2D_ARRAY
+        } else {
+            vk::ImageViewType::_2D
+        })
         .format(format)
         .subresource_range(range);
     let view = unsafe { device.create_image_view(&view_info, None)? };
@@ -160,7 +164,7 @@ pub(super) fn copy_buffer_to_image(
 
         let range = vk::ImageSubresourceRange::builder()
             .aspect_mask(vk::ImageAspectFlags::COLOR)
-            .level_count(layers)
+            .level_count(1)
             .layer_count(layers);
 
         // UNDEFINED → TRANSFER_DST_OPTIMAL
@@ -188,7 +192,7 @@ pub(super) fn copy_buffer_to_image(
             .image_subresource(
                 vk::ImageSubresourceLayers::builder()
                     .aspect_mask(vk::ImageAspectFlags::COLOR)
-                    .layer_count(1),
+                    .layer_count(layers),
             )
             .image_extent(vk::Extent3D {
                 width,
