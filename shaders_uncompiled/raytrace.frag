@@ -27,6 +27,7 @@ layout(set = 0, binding = 0) uniform sampler2D planet_texture;
 const float SUN_INTENSITY = 4.0;
 const float PI = 3.14159265;
 const int VIEW_STEPS = 32; // samples along the view ray inside an atmosphere
+const int LIGHT_STEPS = 8; // samples along each sample's ray towards the Sun
 
 // Distance along the ray to the nearest hit, or -1.0 if it misses (same as ray.rs)
 float ray_sphere(vec3 origin, vec3 dir, vec3 center, float radius) {
@@ -167,6 +168,8 @@ void main() {
         const float R = body.w;
         const float H = (atmo.w - 1.0) * R * 0.2;
         float ds = (t_out - t_in) / VIEW_STEPS;
+        // Optical depth from the camera to the current sample (running total)
+        float view_depth = 0.0;
         vec3 scatter = vec3(0);
 
         for (int s = 0; s < VIEW_STEPS; s++) {
@@ -176,12 +179,29 @@ void main() {
             float height  = length(p - body.xyz) - R;
             float density = exp(-height / H);
             vec3 sun_dir = normalize(push.sun.xyz - p);
+
+            // Air between the camera and p: counted even in shadow (it still blocks the view)
+            view_depth += density * ds / R;
             
             // The planet hides the Sun from this sample: night side, no scattering
             if (ray_sphere(p, sun_dir, body.xyz, R) > 0.0) { continue; }
+
+            // Light march: optical depth from p to the top of the atmosphere, towards the Sun
+            vec2 light = ray_sphere_both(p, sun_dir, body.xyz, R * atmo.w);
+            float l_ds = light.y / LIGHT_STEPS;
+            float light_depth = 0.0;
             
-            // Distances in planet radii, the same unit as β
-            scatter += density * ds / R;
+            for (int l = 0; l < LIGHT_STEPS; l++) {
+                vec3 q = p + sun_dir * (l + jitter) * l_ds;
+                float l_height = length(q - body.xyz) - R;
+                light_depth += exp(-l_height / H) * l_ds / R;
+            }
+
+            // Beer–Lambert: fraction of each colour surviving Sun → p → camera (blue fades first)
+            vec3 T = exp(-atmo.rgb * (view_depth + light_depth));
+
+            // Light scattered at p, dimmed on both legs (distances in planet radii, the same unit as β)
+            scatter += density * ds / R * T;
         }
 
         // β gives the colour; 0.1 stands in for the phase function (A2d)
