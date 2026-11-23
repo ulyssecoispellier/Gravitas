@@ -1,6 +1,8 @@
 use glam::Vec3;
 
 /// Distance along the ray to the nearest hit with the sphere, or None if it misses.
+/// Not used by the program yet (only by the tests): planned for clicking on planets.
+#[allow(dead_code)]
 pub fn ray_sphere(origin: Vec3, dir: Vec3, center: Vec3, radius: f32) -> Option<f32> {
     let ctr_to_origin = origin - center;
     let projection = dir.dot(ctr_to_origin);

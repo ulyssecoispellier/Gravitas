@@ -41,7 +41,7 @@ It is also a learning project: the goal is to understand Rust and Vulkan from th
 | Rocky planet texture (staging upload, sampler, descriptors) | ✅ Done |
 | Star + gas giant, ray-traced in shaders | ⬜ Planned |
 | Ray-traced Sun: depth (`gl_FragDepth`), limb darkening, glow | 🚧 In progress |
-| Shadow rays: eclipses and moon shadows (ray from each planet pixel towards the Sun) | ⬜ Planned |
+| Shadow rays: eclipses (ray from each planet pixel towards the Sun, bodies in a uniform buffer) | ✅ Done |
 | Atmospheric scattering | ⬜ Planned |
 | Bloom + HDR post-processing | ⬜ Planned |
 | Post-processing pass (scene drawn offscreen, then a full-screen pass to the screen) | ✅ Done |

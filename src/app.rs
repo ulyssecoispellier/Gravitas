@@ -10,7 +10,7 @@ use winit::window::{Window, WindowId};
 
 use crate::camera::Camera;
 use crate::physics::{Body, orbit_speed, step_euler};
-use crate::renderer::{PushConstants, RayPushConstants, Renderer};
+use crate::renderer::{MAX_BODIES, PushConstants, RayPushConstants, Renderer};
 
 const DT: f64 = 0.001; // size of one physics step, in seconds
 
@@ -277,7 +277,21 @@ impl ApplicationHandler for App {
                         ],
                     };
 
-                    renderer.draw_frame(&pushes, &ray_push, self.retro).unwrap();
+                    // Every body's position + radius, for the shadow rays (unused slots stay at radius 0)
+                    let mut bodies_data = [[0.0f32; 4]; MAX_BODIES];
+                    for (i, body) in self.bodies.iter().enumerate().take(MAX_BODIES) {
+                        let pos = body.pos();
+                        bodies_data[i] = [
+                            pos.x as f32,
+                            pos.y as f32,
+                            pos.z as f32,
+                            body.radius() as f32,
+                        ];
+                    }
+
+                    renderer
+                        .draw_frame(&pushes, &ray_push, self.retro, &bodies_data)
+                        .unwrap();
                 }
 
                 // Ask for the next frame: this keeps the loop going

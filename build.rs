@@ -32,8 +32,5 @@ fn main() {
         if !status.success() {
             panic!("glslc failed on {name}");
         }
-
-        // A build script can only print through cargo warnings
-        println!("cargo:warning=Compiled {name}");
     }
 }

@@ -41,6 +41,8 @@ const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
 /// The Khronos validation layer: checks every Vulkan call and reports mistakes
 const VALIDATION_LAYER: vk::ExtensionName =
     vk::ExtensionName::from_bytes(b"VK_LAYER_KHRONOS_validation");
+/// Max number of bodies the shaders know about (for shadows)
+pub const MAX_BODIES: usize = 16;
 
 /// The data sent to the shaders for each body drawn (through push constants).
 #[repr(C)]
@@ -156,6 +158,10 @@ pub struct Renderer {
     descriptor_pool: vk::DescriptorPool,
     /// Set 0: the rocky planet texture
     descriptor_set: vk::DescriptorSet,
+    /// Every body's position + radius (uniform buffer, read by the planets' shader)
+    bodies_buffer: vk::Buffer,
+    /// The memory behind `bodies_buffer` (CPU-writable, updated every frame)
+    bodies_memory: vk::DeviceMemory,
 }
 
 impl Renderer {
@@ -239,9 +245,16 @@ impl Renderer {
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
             .descriptor_count(1)
             .stage_flags(vk::ShaderStageFlags::FRAGMENT);
+        // Binding 1: every body's position + radius (uniform buffer), fragment shader
+        let bodies_binding = vk::DescriptorSetLayoutBinding::builder()
+            .binding(1)
+            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT);
         let descriptor_set_layout = unsafe {
             device.create_descriptor_set_layout(
-                &vk::DescriptorSetLayoutCreateInfo::builder().bindings(&[sampler_binding]),
+                &vk::DescriptorSetLayoutCreateInfo::builder()
+                    .bindings(&[sampler_binding, bodies_binding]),
                 None,
             )?
         };
@@ -314,6 +327,15 @@ impl Renderer {
             &pixels,
         )?;
 
+        // Uniform buffer: every body's position + radius, read by the planets' shader (shadows)
+        let (bodies_buffer, bodies_memory) = create_buffer(
+            &instance,
+            &device,
+            physical_device,
+            vk::BufferUsageFlags::UNIFORM_BUFFER,
+            &[[0.0f32; 4]; MAX_BODIES],
+        )?;
+
         // Upload: staging buffer → texture image
         copy_buffer_to_image(
             &device,
@@ -345,10 +367,14 @@ impl Renderer {
         let pool_size = vk::DescriptorPoolSize::builder()
             .type_(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
             .descriptor_count(2);
+        let uniform_pool_size = vk::DescriptorPoolSize::builder()
+            .type_(vk::DescriptorType::UNIFORM_BUFFER)
+            .descriptor_count(2);
         let descriptor_pool = unsafe {
             device.create_descriptor_pool(
                 &vk::DescriptorPoolCreateInfo::builder()
                     .pool_sizes(&[pool_size])
+                    .pool_sizes(&[pool_size, uniform_pool_size])
                     .max_sets(2),
                 None,
             )?
@@ -363,6 +389,19 @@ impl Renderer {
             )?
         }[0];
         write_image_descriptor(&device, descriptor_set, sampler, texture_view);
+
+        // Binding 1 of the planets' set → the bodies buffer
+        let buffer_info = vk::DescriptorBufferInfo::builder()
+            .buffer(bodies_buffer)
+            .offset(0)
+            .range(size_of::<[[f32; 4]; MAX_BODIES]>() as u64);
+        let buffer_infos = &[buffer_info];
+        let bodies_write = vk::WriteDescriptorSet::builder()
+            .dst_set(descriptor_set)
+            .dst_binding(1)
+            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+            .buffer_info(buffer_infos);
+        unsafe { device.update_descriptor_sets(&[bodies_write], &[] as &[vk::CopyDescriptorSet]) };
 
         // Post descriptor set: binding 0 → scene image (same layout as the texture set)
         let post_descriptor_set = unsafe {
@@ -406,15 +445,6 @@ impl Renderer {
             }
         }
 
-        // Debug info about the swapchain
-        println!(
-            "Nb of img : {:?} | Width : {:?} | Height {:?} | Format : {:?}",
-            swapchain.images.len(),
-            swapchain.extent.width,
-            swapchain.extent.height,
-            swapchain.format,
-        );
-
         Ok(Self {
             _entry,
             instance,
@@ -454,6 +484,8 @@ impl Renderer {
             descriptor_set_layout,
             descriptor_pool,
             descriptor_set,
+            bodies_buffer,
+            bodies_memory,
         })
     }
 }
@@ -467,12 +499,23 @@ impl Renderer {
         pushes: &[PushConstants],
         ray_push: &RayPushConstants,
         retro: bool,
+        bodies: &[[f32; 4]; MAX_BODIES],
     ) -> Result<()> {
         unsafe {
             // 1. Wait until the GPU has finished the previous frame, then re-arm the fence
             self.device
                 .wait_for_fences(&[self.in_flight], true, u64::MAX)?;
             self.device.reset_fences(&[self.in_flight])?;
+
+            // Copy this frame's bodies into the uniform buffer
+            let ptr = self.device.map_memory(
+                self.bodies_memory,
+                0,
+                size_of::<[[f32; 4]; MAX_BODIES]>() as u64,
+                vk::MemoryMapFlags::empty(),
+            )?;
+            std::ptr::copy_nonoverlapping(bodies, ptr.cast(), 1);
+            self.device.unmap_memory(self.bodies_memory);
 
             // 2. Get the next swapchain image. The GPU signals `image_available` when it's really free
             let index = self
@@ -893,6 +936,8 @@ impl Drop for Renderer {
             self.device.free_memory(self.index_memory, None);
             self.device.destroy_buffer(self.vertex_buffer, None);
             self.device.free_memory(self.vertex_memory, None);
+            self.device.destroy_buffer(self.bodies_buffer, None);
+            self.device.free_memory(self.bodies_memory, None);
             // Texture: view, image, memory
             self.device.destroy_image_view(self.texture_view, None);
             self.device.destroy_image(self.texture_image, None);

@@ -22,6 +22,25 @@ layout(push_constant) uniform Push {
 
 // Rocky planet texture (set 0, binding 0)
 layout(set = 0, binding = 0) uniform sampler2D planet_texture;
+// Every body: xyz = position, w = radius (set 0, binding 1, see `bodies_buffer`)
+layout(set = 0, binding = 1) uniform Bodies {
+    vec4 bodies[16];
+} all_bodies;
+
+float ray_sphere(vec3 origin, vec3 dir, vec3 center, float radius) {
+    vec3 ctr_to_origin = origin - center;
+    float projection = dot(dir, ctr_to_origin);
+    float gap = dot(ctr_to_origin, ctr_to_origin) - radius * radius;
+    float discriminant = projection * projection - gap;
+
+    if (discriminant < 0.0) {
+        return -1.0;
+    }
+
+    float dist = -projection - sqrt(discriminant);
+
+    if (dist < 0.0) { return -1.0; } else { return dist; }
+}
 
 void main() {
     // Direction from this pixel TOWARDS the star: star position - pixel position, made length 1
@@ -31,6 +50,20 @@ void main() {
 
     // Diffuse light: 1 when facing the light, 0 at 90° or facing away
     float brightness = max(dot(normal, light_dir), 0.0);
+
+    // Shadow rays: from this pixel towards the Sun. Does another body block the way?
+    float sun_dist = length(push.light_pos.xyz - frag_world_pos);
+    for (int i = 1; i < 16; i++) {   // from 1: body 0 is the Sun itself
+        vec4 other = all_bodies.bodies[i];
+
+        if (other.w == 0.0) { continue; }
+        if (distance(other.xyz, push.body_pos.xyz) < 0.001) { continue; }
+
+        float t = ray_sphere(frag_world_pos, light_dir, other.xyz, other.w);
+
+        if (t > 0.0 && t < sun_dist) { brightness = 0.0; }
+    }
+    
     // A glowing body (the star, w = 1) is fully bright everywhere
     brightness = max(brightness, push.info.y);
 

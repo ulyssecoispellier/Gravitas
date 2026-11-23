@@ -1,3 +1,7 @@
 [env]
 DYLD_FALLBACK_LIBRARY_PATH = "/opt/homebrew/lib"
 VK_ADD_LAYER_PATH = "/opt/homebrew/share/vulkan/explicit_layer.d"
+
+# Hide the "future incompatibility" note about the `block` crate (inside winit, not our code)
+[future-incompat-report]
+frequency = "never"

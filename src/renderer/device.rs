@@ -19,14 +19,6 @@ pub(super) fn pick_physical_device(
     let mut best: Option<(vk::PhysicalDevice, u32, u32)> = None;
     for device in devices {
         let props = unsafe { instance.get_physical_device_properties(device) };
-        println!(
-            "GPU: {} | Vulkan {}.{}.{}",
-            props.device_name,
-            vk::version_major(props.api_version),
-            vk::version_minor(props.api_version),
-            vk::version_patch(props.api_version),
-        );
-
         // Find a queue family that can draw AND present to our window
         let families = unsafe { instance.get_physical_device_queue_family_properties(device) };
 
@@ -52,7 +44,6 @@ pub(super) fn pick_physical_device(
 
             if is_better {
                 best = Some((device, index as u32, props.api_version));
-                println!("  → new best GPU");
             }
         }
     }
