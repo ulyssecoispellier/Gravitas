@@ -110,6 +110,21 @@ vec3 direct_light(int index, vec3 point) {
     return albedo(index, point) * brightness;
 }
 
+// Random direction above a surface (cosine-weighted: near the normal more often), from two numbers in [0, 1)
+vec3 random_hemisphere(vec3 normal, float r1, float r2) {
+    // Direction above a flat floor where up = Z
+    float phi = 2.0 * PI * r1;
+    float r = sqrt(r2);
+    vec3 local = vec3(r * cos(phi), r * sin(phi), sqrt(1.0 - r2));
+
+    // Two axes lying on the surface, at right angles to the normal and to each other
+    vec3 helper = abs(normal.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
+    vec3 t = normalize(cross(helper, normal));
+    vec3 b = cross(normal, t);
+
+    return t * local.x + b * local.y + normal * local.z;
+}
+
 void main() {
     // The point far away behind this pixel, in the world (screen → world)
     vec4 far = inverse(push.view_proj) * vec4(screen_pos, 1.0, 1.0);
@@ -117,6 +132,15 @@ void main() {
     // Ray: from the camera, through this pixel
     vec3 origin = push.camera_pos.xyz;
     vec3 dir = normalize(far_point - origin);
+
+    // Per-pixel random offset in [0, 1) for the atmosphere samples (hash of the pixel position)
+    float jitter = fract(sin(dot(gl_FragCoord.xy, vec2(39.3468, 11.1352))) * 43758.5453);
+    // Shift it every frame by the golden ratio: successive frames cover [0, 1) evenly
+    jitter = fract(jitter + push.camera_pos.w * 0.618034);
+
+    // Second, independent random number (other hash weights, other per-frame shift: √2 − 1)
+    float jitter2 = fract(sin(dot(gl_FragCoord.xy, vec2(91.7151, 47.2386))) * 43758.5453);
+    jitter2 = fract(jitter2 + push.camera_pos.w * 0.414214);
 
     // Find the closest body this ray hits (smallest t)
     float best_t = 1e30;
@@ -168,10 +192,6 @@ void main() {
 
     // Atmospheres (single scattering): march the view ray through each planet's gas,
     // adding the sunlight each lit sample scatters towards the camera
-    // Per-pixel random offset in [0, 1) for the atmosphere samples (hash of the pixel position)
-    float jitter = fract(sin(dot(gl_FragCoord.xy, vec2(39.3468, 11.1352))) * 43758.5453);
-    // Shift it every frame by the golden ratio: successive frames cover [0, 1) evenly
-    jitter = fract(jitter + push.camera_pos.w * 0.618034);
     for (int i = 1; i <= 15; i++) {
         vec4 atmo = all_bodies.atmospheres[i];
         vec4 haze = all_bodies.haze[i];
