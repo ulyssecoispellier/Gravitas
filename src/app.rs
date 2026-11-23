@@ -342,9 +342,10 @@ impl ApplicationHandler for App {
                     let projection = self.camera.projection(aspect);
 
                     let view = self.camera.view();
+                    let eye = self.camera.eye();
 
                     // Body 0 plays the star: everything is lit from its position
-                    let star_pos = self.bodies[0].pos();
+                    let star_pos = self.bodies[0].pos() - eye;
 
                     // One box of push constants per body: its matrix, its position, the light's position
                     let pushes: Vec<PushConstants> = self
@@ -353,7 +354,7 @@ impl ApplicationHandler for App {
                         .enumerate()
                         .skip(1)
                         .map(|(i, body)| {
-                            let pos = body.pos();
+                            let pos = body.pos() - eye;
                             // Right to left: scale the unit sphere to the body's radius, then move it into place
                             let model = Mat4::from_translation(Vec3 {
                                 x: pos.x as f32,
@@ -394,10 +395,9 @@ impl ApplicationHandler for App {
                         .collect();
 
                     // Ray-tracing pass data: screen → world matrix, camera position, Sun (centre + radius)
-                    let eye = self.camera.eye();
                     let ray_push = RayPushConstants {
                         view_proj: (projection * view).to_cols_array(),
-                        camera_pos: [eye.x, eye.y, eye.z, (self.frame % 65536) as f32],
+                        camera_pos: [0.0, 0.0, 0.0, (self.frame % 65536) as f32],
                         sun: [
                             star_pos.x as f32,
                             star_pos.y as f32,
@@ -409,7 +409,7 @@ impl ApplicationHandler for App {
                     // Every body's position + radius, for the shadow rays (unused slots stay at radius 0)
                     let mut bodies_data = BodiesUniform::zeroed();
                     for (i, body) in self.bodies.iter().enumerate().take(MAX_BODIES) {
-                        let pos = body.pos();
+                        let pos = body.pos() - eye;
                         bodies_data.bodies[i] = [
                             pos.x as f32,
                             pos.y as f32,
@@ -429,7 +429,7 @@ impl ApplicationHandler for App {
                     // Moons on rails: position = planet + circle at angle 2π·t/period, in slots 9..15
                     for (m, moon) in MOONS.iter().enumerate() {
                         let slot = 1 + BODIES.len() + m;
-                        let centre = self.bodies[moon.parent].pos();
+                        let centre = self.bodies[moon.parent].pos() - eye;
                         let angle = TAU * self.sim_time / moon.period;
 
                         let x = centre.x + moon.distance * angle.cos();
@@ -482,8 +482,8 @@ impl ApplicationHandler for App {
                 }
                 if self.panning {
                     self.camera.pan(
-                        (position.x - self.last_cursor.0) as f32,
-                        (position.y - self.last_cursor.1) as f32,
+                        (position.x - self.last_cursor.0) as f64,
+                        (position.y - self.last_cursor.1) as f64,
                     );
                 }
                 // Always remember the position, otherwise the next drag would jump
@@ -493,8 +493,8 @@ impl ApplicationHandler for App {
             WindowEvent::MouseWheel { delta, .. } => {
                 // Mouse wheels count in "lines", trackpads in pixels: bring both to the same scale
                 let amount = match delta {
-                    MouseScrollDelta::LineDelta(_, y) => y,
-                    MouseScrollDelta::PixelDelta(pos) => pos.y as f32 * 0.05,
+                    MouseScrollDelta::LineDelta(_, y) => y as f64,
+                    MouseScrollDelta::PixelDelta(pos) => pos.y as f64 * 0.05,
                 };
 
                 self.camera.zoom(amount);
@@ -547,7 +547,7 @@ impl App {
             renderer: None,
             // Looking at the Sun from 14 units away, slightly from above
             camera: Camera::new(
-                Vec3::new(0.0, 0.0, 0.0),
+                DVec3::new(0.0, 0.0, 0.0),
                 -std::f32::consts::FRAC_PI_2,
                 (3.0f32 / 5.0).asin(),
                 14.0,
