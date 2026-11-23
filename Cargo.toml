@@ -11,3 +11,6 @@ half = "2.7.1"
 image = "0.25.10"
 vulkanalia = { version = "0.35.0", features = ["libloading", "provisional", "window"] }
 winit = "0.30.13"
+
+[profile.dev.package."*"]
+opt-level = 3
