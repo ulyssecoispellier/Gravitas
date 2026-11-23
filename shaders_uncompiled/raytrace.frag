@@ -17,6 +17,7 @@ layout(push_constant) uniform Push {
 layout(set = 0, binding = 1) uniform Bodies {
     vec4 bodies[16];
     vec4 colours[16];
+    vec4 atmospheres[16]; // rgb = colour, w = outer radius ÷ planet radius (0 = none)
 } all_bodies;
 
 layout(set = 0, binding = 2) uniform sampler2D sky;
@@ -40,6 +41,22 @@ float ray_sphere(vec3 origin, vec3 dir, vec3 center, float radius) {
     float dist = -projection - sqrt(discriminant);
 
     if (dist < 0.0) { return -1.0; } else { return dist; }
+}
+
+// Entry and exit distances along the ray (x = in, y = out), or vec2(-1.0) if it misses
+vec2 ray_sphere_both(vec3 origin, vec3 dir, vec3 center, float radius) {
+    vec3 ctr_to_origin = origin - center;
+    float projection = dot(dir, ctr_to_origin);
+    float gap = dot(ctr_to_origin, ctr_to_origin) - radius * radius;
+    float discriminant = projection * projection - gap;
+
+    if (discriminant < 0.0) {
+        return vec2(-1.0, -1.0);
+    }
+
+    float s = sqrt(discriminant);
+
+    return vec2(-projection - s, -projection + s);
 }
 
 void main() {
@@ -127,6 +144,24 @@ void main() {
         out_color = vec4(stars, 1.0);
     }
 
+    // Atmospheres: each ray picks up colour proportional to its path through the gas
+    for (int i = 1; i <= 15; i++) { 
+        vec4 atmo = all_bodies.atmospheres[i];
+
+        if (atmo.w == 0.0) { continue; }
+
+        vec4 body = all_bodies.bodies[i];
+        vec2 shell = ray_sphere_both(origin, dir, body.xyz, body.w * atmo.w);
+
+        if (shell.y < 0.0) { continue; }
+
+        float t_in = max(shell.x, 0.0);
+        float t_out = min(shell.y, best_t);
+        float path = max(t_out - t_in, 0.0);
+
+        out_color.rgb += atmo.rgb * (path / body.w) * 0.5;
+    }
+    
     // Dithering: tiny per-pixel noise hides the 256-level steps (banding)
     float noise = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
     // Add the noise in sRGB space (what the screen shows), not in linear space

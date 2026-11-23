@@ -32,6 +32,8 @@ struct BodyData {
     radius: f64,
     /// Base colour (r, g, b)
     colour: [f32; 3],
+    /// Atmosphere: rgb = colour and strength, w = outer radius ÷ planet radius (0 = none)
+    atmosphere: [f32; 4],
 }
 
 const BODIES: [BodyData; 8] = [
@@ -41,6 +43,7 @@ const BODIES: [BodyData; 8] = [
         mass: 1.66e-7,
         radius: 0.035,
         colour: [0.6, 0.58, 0.55],
+        atmosphere: [0.0, 0.0, 0.0, 0.0],
     },
     // Venus
     BodyData {
@@ -48,6 +51,7 @@ const BODIES: [BodyData; 8] = [
         mass: 2.45e-6,
         radius: 0.075,
         colour: [0.9, 0.8, 0.55],
+        atmosphere: [0.9, 0.8, 0.5, 1.12],
     },
     // Earth (textured)
     BodyData {
@@ -55,6 +59,7 @@ const BODIES: [BodyData; 8] = [
         mass: 3.00e-6,
         radius: 0.08,
         colour: [0.3, 0.5, 0.9],
+        atmosphere: [0.3, 0.55, 1.0, 1.15],
     },
     // Mars
     BodyData {
@@ -62,6 +67,7 @@ const BODIES: [BodyData; 8] = [
         mass: 3.23e-7,
         radius: 0.05,
         colour: [0.8, 0.4, 0.25],
+        atmosphere: [0.35, 0.2, 0.12, 1.06],
     },
     // Jupiter
     BodyData {
@@ -69,6 +75,7 @@ const BODIES: [BodyData; 8] = [
         mass: 9.55e-4,
         radius: 0.25,
         colour: [0.85, 0.7, 0.5],
+        atmosphere: [0.8, 0.65, 0.45, 1.05],
     },
     // Saturn
     BodyData {
@@ -76,6 +83,7 @@ const BODIES: [BodyData; 8] = [
         mass: 2.86e-4,
         radius: 0.21,
         colour: [0.9, 0.8, 0.55],
+        atmosphere: [0.85, 0.75, 0.5, 1.05],
     },
     // Uranus
     BodyData {
@@ -83,6 +91,7 @@ const BODIES: [BodyData; 8] = [
         mass: 4.37e-5,
         radius: 0.12,
         colour: [0.6, 0.85, 0.9],
+        atmosphere: [0.4, 0.8, 0.9, 1.08],
     },
     // Neptune
     BodyData {
@@ -90,6 +99,7 @@ const BODIES: [BodyData; 8] = [
         mass: 5.15e-5,
         radius: 0.12,
         colour: [0.3, 0.45, 0.95],
+        atmosphere: [0.25, 0.45, 1.0, 1.08],
     },
 ];
 
@@ -109,6 +119,8 @@ pub struct App {
     bodies: Vec<Body>,
     /// Base colour of each body, same order as `bodies`
     colours: Vec<[f32; 3]>,
+    /// Atmosphere of each body, same order as `bodies` (Sun: none)
+    atmospheres: Vec<[f32; 4]>,
     /// Number of frames drawn so far
     frame: u64,
     /// When the previous frame started, to measure how much time passed
@@ -303,6 +315,7 @@ impl ApplicationHandler for App {
                             self.colours[i][2],
                             if i == EARTH { 1.0 } else { 0.0 },
                         ];
+                        bodies_data.atmospheres[i] = self.atmospheres[i];
                     }
 
                     renderer
@@ -388,6 +401,9 @@ impl App {
                 .collect(),
             colours: std::iter::once(SUN_COLOUR)
                 .chain(BODIES.iter().map(|p| p.colour))
+                .collect(),
+            atmospheres: std::iter::once([0.0, 0.0, 0.0, 0.0])
+                .chain(BODIES.iter().map(|p| p.atmosphere))
                 .collect(),
             frame: 0,
             last_frame: Instant::now(),
