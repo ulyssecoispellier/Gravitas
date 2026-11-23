@@ -200,12 +200,19 @@ void main() {
             // Beer–Lambert: fraction of each colour surviving Sun → p → camera (blue fades first)
             vec3 T = exp(-atmo.rgb * (view_depth + light_depth));
 
+            // Rayleigh phase: twice as much light scattered along the Sun's axis as at 90°
+            float mu = dot(dir, sun_dir);
+            float phase = 3 / (16 * PI) * (1 + mu * mu);
+
             // Light scattered at p, dimmed on both legs (distances in planet radii, the same unit as β)
-            scatter += density * ds / R * T;
+            scatter += density * ds / R * T * phase;
         }
 
-        // β gives the colour; 0.1 stands in for the phase function (A2d)
-        out_color.rgb += SUN_INTENSITY * atmo.rgb * scatter * 0.1;
+        // What lies behind the gas (ground, stars, Sun) is seen through all of it
+        out_color.rgb *= exp(-atmo.rgb * view_depth);
+
+        // Add the light the gas scattered towards the camera (β gives the colour)
+        out_color.rgb += SUN_INTENSITY * atmo.rgb * scatter;
     }
     
     // Dithering: tiny per-pixel noise hides the 256-level steps (banding)
