@@ -14,6 +14,10 @@ layout(push_constant) uniform Push {
     vec4 sun;      // xyz = centre, w = radius
 } push;
 
+layout(set = 0, binding = 1) uniform Bodies {
+    vec4 bodies[16];
+} all_bodies;
+
 // How bright the Sun is compared with a lit planet (HDR: can be much more than 1.0)
 const float SUN_INTENSITY = 4.0;
 
@@ -40,12 +44,24 @@ void main() {
     // Ray: from the camera, through this pixel
     vec3 origin = push.camera_pos.xyz;
     vec3 dir = normalize(far_point - origin);
+
+    // Find the closest body this ray hits (smallest t)
+    float best_t = 1e30;
+    int best_index = -1;
+    for (int i = 0; i < 16; i++) {
+        vec4 body = all_bodies.bodies[i];
+        if (body.w == 0.0) { continue; }
+        float t = ray_sphere(origin, dir, body.xyz, body.w);
+        if (t > 0.0 && t < best_t) {
+            best_t = t;
+            best_index = i;
+        }
+    }
     
-    // Does this pixel's ray hit the Sun?
-    float t = ray_sphere(origin, dir, push.sun.xyz, push.sun.w);
-    if (t > 0.0) {
+    // Body 0: the Sun
+    if (best_index == 0) {
         // Where the ray hit the Sun, in the world
-        vec3 hit = origin + t * dir;
+        vec3 hit = origin + best_t * dir;
         // Its depth on screen: same maths as the planets' vertex shader
         vec4 clip = push.view_proj * vec4(hit, 1.0);
         gl_FragDepth = clip.z / clip.w;
@@ -56,6 +72,19 @@ void main() {
         float brightness = 1.0 - 0.6 * (1.0 - mu);
         
         out_color = vec4(vec3(1.0, 0.97, 0.92) * brightness * SUN_INTENSITY, 1.0); // hit: the Sun
+    } else if (best_index > 0) {
+        // A planet: where the ray hit it
+        vec3 hit = origin + best_t * dir;
+        // Its depth on screen
+        vec4 clip = push.view_proj * vec4(hit, 1.0);
+        gl_FragDepth = clip.z / clip.w;
+
+        // Diffuse lighting: how much this point faces the Sun
+        vec3 normal = normalize(hit - all_bodies.bodies[best_index].xyz);
+        vec3 light_dir = normalize(push.sun.xyz - hit);
+        float brightness = max(dot(normal, light_dir), 0.0);
+
+        out_color = vec4(vec3(brightness), 1.0);
     } else {
         gl_FragDepth = 0.9999;
 

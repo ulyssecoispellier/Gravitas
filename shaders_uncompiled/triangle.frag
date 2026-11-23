@@ -59,9 +59,18 @@ void main() {
         if (other.w == 0.0) { continue; }
         if (distance(other.xyz, push.body_pos.xyz) < 0.001) { continue; }
 
-        float t = ray_sphere(frag_world_pos, light_dir, other.xyz, other.w);
-
-        if (t > 0.0 && t < sun_dist) { brightness = 0.0; }
+        vec3 to_blocker = other.xyz - frag_world_pos;
+        float blocker_dist = length(to_blocker);
+        if (blocker_dist > sun_dist) { continue; }           // beyond the Sun: can't shade us
+        
+        float a_sun = asin(clamp(all_bodies.bodies[0].w / sun_dist, 0.0, 1.0)); // body 0 = the Sun
+        float a_b   = asin(clamp(other.w / blocker_dist, 0.0, 1.0));
+        float theta = acos(clamp(dot(normalize(to_blocker), light_dir), -1.0, 1.0));
+        
+        // How much of the Sun is hidden: 0 = none, up to 1 = all of it
+        float max_cover = min(1.0, (a_b * a_b) / (a_sun * a_sun));
+        float cover = (1.0 - smoothstep(abs(a_sun - a_b), a_sun + a_b, theta)) * max_cover;
+        brightness *= 1.0 - cover;
     }
     
     // A glowing body (the star, w = 1) is fully bright everywhere

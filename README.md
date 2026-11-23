@@ -45,7 +45,7 @@ It is also a learning project: the goal is to understand Rust and Vulkan from th
 | Soft shadows: the Sun as a disc, not a point (umbra cone, penumbra, annular eclipses) | ⬜ Planned |
 | Post-processing pass (scene drawn offscreen, then a full-screen pass to the screen) | ✅ Done |
 | **Main direction: a path-traced renderer** (physically based light, multiple bounces) | |
-| ↳ 1. HDR: 16-bit float scene image + tone mapping (needed for bright Sun vs dim bounced light) | ⬜ Planned |
+| ↳ 1. HDR: 16-bit float scene image + tone mapping (needed for bright Sun vs dim bounced light) | ✅ Done |
 | ↳ 2. All bodies in the ray pass as analytic spheres (textures from the hit point's UV) | ⬜ Planned |
 | ↳ 3. Bounces: random rays per pixel, N bounces, albedo per body (moonlight, earthshine, soft shadows) | ⬜ Planned |
 | ↳ 4. Progressive accumulation (average frames while the camera is still) to remove noise | ⬜ Planned |
@@ -61,6 +61,8 @@ It is also a learning project: the goal is to understand Rust and Vulkan from th
 | Collisions: a body that hits a bigger one merges into it (mass added, removed with `Vec::retain`) | ⬜ Idea |
 | Moons: the major ones (Moon, Phobos & Deimos, the 4 Galilean moons, Titan…), on fixed "on rails" orbits around their planet, drawn at an exaggerated distance to match the exaggerated sizes | ⬜ Planned |
 | Moon texture: 2nd texture + 2nd descriptor set, bind the right set before each body | ⬜ Planned |
+| Real textures + normal maps for the rocky planets (Mercury, Venus clouds, Earth, Mars): texture array (one image, one layer per planet), normals computed in Rust from NASA/USGS elevation maps, colour maps from Solar System Scope (CC BY 4.0) | ⬜ Planned |
+| Axial tilt + rotation per planet (added to `BodyData`): the texture spins around a tilted axis. Real values: tilt Mercury 0°, Venus 177° (upside down), Earth 23.4°, Mars 25.2°, Jupiter 3.1°, Saturn 26.7°, Uranus 97.8° (on its side), Neptune 28.3°; Venus and Uranus spin backwards. Rotation needs its own time scale: at the sim's speed, a real Earth day would last ~0.05 s | ⬜ Planned |
 
 Right now, running the program opens a window, runs the physics in real time, and shows the Solar System (the Sun and its 8 planets, Earth textured) as solid spheres, each with its own size and colour. A single unit UV sphere is generated in Rust and uploaded to the GPU through vertex and index buffers. It is drawn once per body, scaled to the body's radius, and each body's model × view × projection matrix (a perspective camera looking at the orbit from an angle) is sent with push constants. A depth buffer makes the closest surface win, so the spheres hide each other correctly. The Sun (body 0) glows, and lights the planets per pixel from its position (diffuse lighting with vertex normals). The camera orbits the system with the mouse, and the window can be resized freely: the swapchain and depth image are rebuilt at the new size. Under the hood, it sets up Vulkan: it connects Vulkan to the window (surface), picks the best GPU that can draw and present, opens a logical device, creates a swapchain, and prepares command buffers and synchronization objects. Each frame, it waits for the previous one, takes a swapchain image, records the drawing commands (dynamic rendering, Vulkan 1.3), submits them and presents the image.
 

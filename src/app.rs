@@ -131,9 +131,8 @@ pub struct App {
 impl ApplicationHandler for App {
     /// Called when the app is ready to show a window: create it, then the renderer.
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        let attributes = Window::default_attributes()
-            .with_title("Gravitas")
-            .with_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
+        let attributes = Window::default_attributes().with_title("Gravitas");
+        //.with_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
 
         let window = event_loop.create_window(attributes).unwrap();
 
