@@ -40,11 +40,17 @@ It is also a learning project: the goal is to understand Rust and Vulkan from th
 | The Solar System: Sun + 8 planets (real masses, compressed distances, per-body colours) | ✅ Done |
 | Rocky planet texture (staging upload, sampler, descriptors) | ✅ Done |
 | Star + gas giant, ray-traced in shaders | ⬜ Planned |
-| Ray-traced Sun: depth (`gl_FragDepth`), limb darkening, glow | 🚧 In progress |
+| Ray-traced Sun: depth (`gl_FragDepth`), limb darkening, glow | ✅ Done |
 | Shadow rays: eclipses (ray from each planet pixel towards the Sun, bodies in a uniform buffer) | ✅ Done |
-| Atmospheric scattering | ⬜ Planned |
-| Bloom + HDR post-processing | ⬜ Planned |
 | Post-processing pass (scene drawn offscreen, then a full-screen pass to the screen) | ✅ Done |
+| **Main direction: a path-traced renderer** (physically based light, multiple bounces) | |
+| ↳ 1. HDR: 16-bit float scene image + tone mapping (needed for bright Sun vs dim bounced light) | ⬜ Planned |
+| ↳ 2. All bodies in the ray pass as analytic spheres (textures from the hit point's UV) | ⬜ Planned |
+| ↳ 3. Bounces: random rays per pixel, N bounces, albedo per body (moonlight, earthshine, soft shadows) | ⬜ Planned |
+| ↳ 4. Progressive accumulation (average frames while the camera is still) to remove noise | ⬜ Planned |
+| ↳ 5. Atmospheres in the path tracer: rays scatter inside the air and pick up its colour (blue sky, orange sunsets, hazy gas giants) | ⬜ Planned |
+| ↳ 6. Bloom on top of the HDR image | ⬜ Planned |
+| Skybox: a starfield / Milky Way background (cube map or equirectangular texture, sampled with the ray direction) | ⬜ Planned |
 | Retro dithering mode, toggled with `C` (ordered / Bayer dithering, few colour levels) | ✅ Done |
 | Planetary ring: flat disk mesh with a transparent striped texture | ⬜ Planned |
 | Asteroid belt (between Mars and Jupiter) + Kuiper belt (beyond Neptune): thousands of rocks in one draw call (GPU instancing, `VertexInputRate::INSTANCE`) | ⬜ Planned |
