@@ -89,7 +89,7 @@ pub struct PostPushConstants {
 pub struct BodiesUniform {
     pub bodies: [[f32; 4]; MAX_BODIES],
     pub colours: [[f32; 4]; MAX_BODIES],
-    /// rgb = atmosphere colour, w = outer radius ÷ planet radius (0 = none)
+    /// rgb = scattering strength per colour (β, per planet radius), w = outer radius ÷ planet radius (0 = none)
     pub atmospheres: [[f32; 4]; MAX_BODIES],
 }
 

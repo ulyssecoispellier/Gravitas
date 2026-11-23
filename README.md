@@ -124,16 +124,18 @@ Physically based light with multiple bounces.
 |---|---|---|
 | 1 | HDR scene image + tone mapping | ✅ |
 | 2 | All bodies in the ray pass as analytic spheres (lit, coloured, Earth textured, soft eclipses) | ✅ |
-| 3 | Bounces: random rays, albedo per body (moonlight, earthshine, soft shadows) | ⬜ |
+| 3 | Bounces: random rays, albedo per body (moonlight, earthshine, twilight lighting the ground, soft shadows) | ⬜ |
 | 4 | Progressive accumulation to remove noise while the camera is still | ⬜ |
-| 5 | Atmospheres: rays scatter in the air and pick up its colour (blue sky, orange sunsets, hazy gas giants) | 🚧 next |
+| 5 | Atmospheres: rays scatter in the air and pick up its colour (blue sky, orange sunsets, hazy gas giants) — per-planet data ✅, density + shadow ✅, extinction next | 🚧 |
 | 6 | Bloom on top of the HDR image — v1 ✅ (13×13 blur in the post pass), v2: downsampled blur chain for wide halos | 🚧 |
+| 7 | Auto-exposure: the image adapts to dark scenes like an eye or a camera (night sides become visible) | ⬜ |
 
 ### 🌍 The Solar System
 | | Status |
 |---|---|
 | Earth: real 8k day map in the ray pass (UV from the hit normal) | ✅ |
 | Earth: normal map + specular (ocean glints) | ⬜ |
+| Earth: city lights on the night side (night map, shown where sunlight ≈ 0) | ⬜ |
 | Real colour textures + normal maps for the other rocky planets (texture array) | ⬜ |
 | Axial tilt + rotation per planet (Venus upside down, Uranus on its side, both spinning backwards) | ⬜ |
 | Major moons on "on rails" orbits (Moon, Phobos & Deimos, Galilean moons, Titan…) + their textures | ⬜ |
@@ -161,6 +163,7 @@ Physically based light with multiple bounces.
 | GPU physics with a compute shader | 💡 |
 | Wireframe toggle at runtime (2 pipelines) | 💡 |
 | Click on a planet to select it (mouse ray + `ray_sphere`) | 💡 |
+| Airglow + aurorae: the upper air glowing faintly on its own (green/red layers) | 💡 |
 
 <details>
 <summary><b>📚 Learning log: everything built so far</b></summary>

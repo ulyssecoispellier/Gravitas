@@ -17,7 +17,7 @@ layout(push_constant) uniform Push {
 layout(set = 0, binding = 1) uniform Bodies {
     vec4 bodies[16];
     vec4 colours[16];
-    vec4 atmospheres[16]; // rgb = colour, w = outer radius ÷ planet radius (0 = none)
+    vec4 atmospheres[16]; // rgb = scattering strength per colour (β), w = outer radius ÷ planet radius (0 = none)
 } all_bodies;
 
 layout(set = 0, binding = 2) uniform sampler2D sky;
@@ -26,6 +26,7 @@ layout(set = 0, binding = 0) uniform sampler2D planet_texture;
 // How bright the Sun is compared with a lit planet (HDR: can be much more than 1.0)
 const float SUN_INTENSITY = 4.0;
 const float PI = 3.14159265;
+const int VIEW_STEPS = 32; // samples along the view ray inside an atmosphere
 
 // Distance along the ray to the nearest hit, or -1.0 if it misses (same as ray.rs)
 float ray_sphere(vec3 origin, vec3 dir, vec3 center, float radius) {
@@ -144,8 +145,11 @@ void main() {
         out_color = vec4(stars, 1.0);
     }
 
-    // Atmospheres: each ray picks up colour proportional to its path through the gas
-    for (int i = 1; i <= 15; i++) { 
+    // Atmospheres (single scattering): march the view ray through each planet's gas,
+    // adding the sunlight each lit sample scatters towards the camera
+    // Per-pixel random offset in [0, 1) for the atmosphere samples (hash, stable from frame to frame)
+    float jitter = fract(sin(dot(gl_FragCoord.xy, vec2(39.3468, 11.1352))) * 43758.5453);
+    for (int i = 1; i <= 15; i++) {
         vec4 atmo = all_bodies.atmospheres[i];
 
         if (atmo.w == 0.0) { continue; }
@@ -155,11 +159,33 @@ void main() {
 
         if (shell.y < 0.0) { continue; }
 
+        // Part of the ray inside the gas: from the camera at the earliest, up to the first solid hit
         float t_in = max(shell.x, 0.0);
         float t_out = min(shell.y, best_t);
-        float path = max(t_out - t_in, 0.0);
 
-        out_color.rgb += atmo.rgb * (path / body.w) * 0.5;
+        // Planet radius and scale height (density falls to 37% every H)
+        const float R = body.w;
+        const float H = (atmo.w - 1.0) * R * 0.2;
+        float ds = (t_out - t_in) / VIEW_STEPS;
+        vec3 scatter = vec3(0);
+
+        for (int s = 0; s < VIEW_STEPS; s++) {
+            // Sample at a random point inside step s (jitter: bands become fine noise)
+            float t = t_in + (s + jitter) * ds;
+            vec3 p = origin + dir * t;
+            float height  = length(p - body.xyz) - R;
+            float density = exp(-height / H);
+            vec3 sun_dir = normalize(push.sun.xyz - p);
+            
+            // The planet hides the Sun from this sample: night side, no scattering
+            if (ray_sphere(p, sun_dir, body.xyz, R) > 0.0) { continue; }
+            
+            // Distances in planet radii, the same unit as β
+            scatter += density * ds / R;
+        }
+
+        // β gives the colour; 0.1 stands in for the phase function (A2d)
+        out_color.rgb += SUN_INTENSITY * atmo.rgb * scatter * 0.1;
     }
     
     // Dithering: tiny per-pixel noise hides the 256-level steps (banding)

@@ -64,7 +64,7 @@ impl Camera {
         self.distance *= 1.0 - amount * 0.1;
 
         // Not inside the target, not lost in space
-        self.distance = self.distance.clamp(0.5, 50.0);
+        self.distance = self.distance.clamp(0.05, 50.0);
     }
 
     /// Widens (`up = true`) or narrows the lens: changes the field of view.
