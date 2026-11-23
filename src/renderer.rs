@@ -159,7 +159,7 @@ pub struct Renderer {
     post_pipeline: vk::Pipeline,
     /// Set 0 of the post pass: the scene image
     post_descriptor_set: vk::DescriptorSet,
-    /// Earth's texture (pixels from textures/earth/8k_earth_daymap.jpg)
+    /// Earth's texture (pixels from textures/earth/albedo.jpg)
     texture_image: vk::Image,
     /// The memory behind `texture_image` (GPU-only)
     texture_memory: vk::DeviceMemory,
@@ -329,7 +329,7 @@ impl Renderer {
         )?;
 
         // 7. Earth texture (Solar System Scope 8k day map): load as RGBA8
-        let img = image::open("textures/earth/8k_earth_daymap.jpg")?.to_rgba8();
+        let img = image::open("textures/earth/albedo.jpg")?.to_rgba8();
         let (tex_width, tex_height) = img.dimensions();
         let pixels = img.into_raw();
 

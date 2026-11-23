@@ -1,4 +1,4 @@
 target/
 shaders/
-textures/sky.exr
-textures/earth/
+# Textures are big downloads (see README): never in git
+textures/

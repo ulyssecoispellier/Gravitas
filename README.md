@@ -64,18 +64,67 @@ vulkaninfo --summary   # check that your GPU is detected
 ```
 The project's `.cargo/config.toml` tells the program where Homebrew installed Vulkan, so there's nothing else to set up.
 
-### Sky texture (not in git, 36 MB)
-```bash
-curl -L -o textures/sky.exr https://svs.gsfc.nasa.gov/vis/a000000/a004800/a004851/starmap_2020_4k.exr
+### Textures (not in git, ~65 MB once resized)
+One folder per planet, its moons in `satellites/`, and the same file names everywhere:
+
+```
+textures/
+├── sky.exr                       # NASA Deep Star Maps 2020 (Milky Way + stars, HDR)
+├── earth/
+│   ├── albedo.jpg                # surface colour
+│   ├── normal.tif                # surface slopes
+│   ├── specular.tif              # shininess (oceans)
+│   └── satellites/
+│       └── moon/
+│           └── albedo.jpg
+├── jupiter/
+│   ├── albedo.jpg
+│   └── satellites/
+│       ├── io/  europa/  ganymede/  callisto/
+└── …
 ```
 
-### Earth textures (not in git, from [Solar System Scope](https://www.solarsystemscope.com/textures/), CC BY 4.0)
 ```bash
-mkdir -p textures/earth && cd textures/earth
-curl -L -O https://www.solarsystemscope.com/textures/download/8k_earth_daymap.jpg
-curl -L -O https://www.solarsystemscope.com/textures/download/8k_earth_normal_map.tif
-curl -L -O https://www.solarsystemscope.com/textures/download/8k_earth_specular_map.tif
-cd ../..
+SSS=https://www.solarsystemscope.com/textures/download
+curl -L -o textures/sky.exr https://svs.gsfc.nasa.gov/vis/a000000/a004800/a004851/starmap_2020_4k.exr
+mkdir -p textures/{mercury,venus,earth/satellites/moon,mars,jupiter,saturn,uranus,neptune}
+curl -L -o textures/mercury/albedo.jpg            $SSS/8k_mercury.jpg
+curl -L -o textures/venus/albedo.jpg              $SSS/4k_venus_atmosphere.jpg
+curl -L -o textures/earth/albedo.jpg              $SSS/8k_earth_daymap.jpg
+curl -L -o textures/earth/normal.tif              $SSS/8k_earth_normal_map.tif
+curl -L -o textures/earth/specular.tif            $SSS/8k_earth_specular_map.tif
+curl -L -o textures/earth/satellites/moon/albedo.jpg $SSS/8k_moon.jpg
+curl -L -o textures/mars/albedo.jpg               $SSS/8k_mars.jpg
+curl -L -o textures/jupiter/albedo.jpg            $SSS/8k_jupiter.jpg
+curl -L -o textures/saturn/albedo.jpg             $SSS/8k_saturn.jpg
+curl -L -o textures/uranus/albedo.jpg             $SSS/2k_uranus.jpg
+curl -L -o textures/neptune/albedo.jpg            $SSS/2k_neptune.jpg
+```
+Moons of Jupiter, Saturn and Neptune, from [Celestia Content](https://github.com/CelestiaProject/CelestiaContent) (served by GitHub):
+```bash
+CEL=https://raw.githubusercontent.com/CelestiaProject/CelestiaContent/master/textures/hires
+mkdir -p textures/jupiter/satellites/{io,europa,ganymede,callisto} textures/saturn/satellites/titan textures/neptune/satellites/triton
+curl -L -o textures/jupiter/satellites/io/albedo.png        $CEL/io.png
+curl -L -o textures/jupiter/satellites/europa/albedo.jpg    $CEL/europa.jpg
+curl -L -o textures/jupiter/satellites/ganymede/albedo.jpg  $CEL/ganymede.jpg
+curl -L -o textures/jupiter/satellites/callisto/albedo.jpg  $CEL/callisto.jpg
+curl -L -o textures/saturn/satellites/titan/albedo.png      $CEL/titan.png
+curl -L -o textures/saturn/satellites/titan/clouds.jpg      $CEL/titan-clouds.jpg
+curl -L -o textures/neptune/satellites/triton/albedo.jpg    $CEL/triton.jpg
+```
+Then bring **every** map to the same size, 4096 × 2048 (the texture array needs equal layers), and PNGs to JPG:
+```bash
+python3 - <<'PY'
+from PIL import Image; import glob, os
+Image.MAX_IMAGE_PIXELS = None
+for p in glob.glob('textures/**/*.[jpt][pni][gf]', recursive=True):
+    im = Image.open(p); im.load()
+    if im.size != (4096, 2048): im = im.resize((4096, 2048), Image.LANCZOS)
+    if p.endswith('.png'):
+        im.convert('RGB').save(p[:-4] + '.jpg', quality=92); os.remove(p)
+    elif p.endswith('.jpg'): im.convert('RGB').save(p, quality=92)
+    else: im.save(p, compression='tiff_deflate')
+PY
 ```
 
 ### Run
@@ -255,4 +304,6 @@ textures/                # planet textures
 
 ## 🙏 Credits
 - Planet data: NASA.
-- Planned planet textures: [Solar System Scope](https://www.solarsystemscope.com/textures/) (CC BY 4.0, based on NASA imagery) and NASA / USGS elevation maps.
+- Star map: [NASA SVS Deep Star Maps 2020](https://svs.gsfc.nasa.gov/4851) (public domain).
+- Planet and Moon textures: [Solar System Scope](https://www.solarsystemscope.com/textures/) (CC BY 4.0, based on NASA imagery).
+- Io, Europa, Ganymede, Callisto, Titan, Triton textures: [Celestia Content](https://github.com/CelestiaProject/CelestiaContent) (`textures/hires/`), built from NASA/JPL/USGS data by John van Vliet, Askaniy Anpilogov, Björn Jónsson, Kevin M. Gill and others (CC BY 3.0 / CC BY 4.0; see each file's `.license` there).
