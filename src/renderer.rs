@@ -43,6 +43,8 @@ const VALIDATION_LAYER: vk::ExtensionName =
     vk::ExtensionName::from_bytes(b"VK_LAYER_KHRONOS_validation");
 /// Max number of bodies the shaders know about (for shadows)
 pub const MAX_BODIES: usize = 16;
+/// Format of the scene image: 16-bit floats per channel, so light can go above 1.0 (HDR)
+const HDR_FORMAT: vk::Format = vk::Format::R16G16B16A16_SFLOAT;
 
 /// The data sent to the shaders for each body drawn (through push constants).
 #[repr(C)]
@@ -203,7 +205,7 @@ impl Renderer {
             &device,
             physical_device,
             swapchain.extent,
-            swapchain.format,
+            HDR_FORMAT,
             vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
             vk::ImageAspectFlags::COLOR,
         )?;
@@ -267,7 +269,7 @@ impl Renderer {
 
         let (ray_pipeline_layout, ray_pipeline) = create_pipeline(
             &device,
-            swapchain.format,
+            HDR_FORMAT,
             ray_vert_module,
             ray_frag_module,
             descriptor_set_layout,
@@ -291,7 +293,7 @@ impl Renderer {
         // Mesh pass: the planets
         let (pipeline_layout, pipeline) = create_pipeline(
             &device,
-            swapchain.format,
+            HDR_FORMAT,
             vert_module,
             frag_module,
             descriptor_set_layout,
@@ -902,7 +904,7 @@ impl Renderer {
                 &self.device,
                 self.physical_device,
                 self.swapchain.extent,
-                self.swapchain.format,
+                HDR_FORMAT,
                 vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
                 vk::ImageAspectFlags::COLOR,
             )?;

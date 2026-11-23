@@ -42,6 +42,7 @@ It is also a learning project: the goal is to understand Rust and Vulkan from th
 | Star + gas giant, ray-traced in shaders | ⬜ Planned |
 | Ray-traced Sun: depth (`gl_FragDepth`), limb darkening, glow | ✅ Done |
 | Shadow rays: eclipses (ray from each planet pixel towards the Sun, bodies in a uniform buffer) | ✅ Done |
+| Soft shadows: the Sun as a disc, not a point (umbra cone, penumbra, annular eclipses) | ⬜ Planned |
 | Post-processing pass (scene drawn offscreen, then a full-screen pass to the screen) | ✅ Done |
 | **Main direction: a path-traced renderer** (physically based light, multiple bounces) | |
 | ↳ 1. HDR: 16-bit float scene image + tone mapping (needed for bright Sun vs dim bounced light) | ⬜ Planned |

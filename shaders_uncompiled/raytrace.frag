@@ -14,6 +14,9 @@ layout(push_constant) uniform Push {
     vec4 sun;      // xyz = centre, w = radius
 } push;
 
+// How bright the Sun is compared with a lit planet (HDR: can be much more than 1.0)
+const float SUN_INTENSITY = 4.0;
+
 // Distance along the ray to the nearest hit, or -1.0 if it misses (same as ray.rs)
 float ray_sphere(vec3 origin, vec3 dir, vec3 center, float radius) {
     vec3 ctr_to_origin = origin - center;
@@ -52,7 +55,7 @@ void main() {
         float mu = dot(normal, -dir);
         float brightness = 1.0 - 0.6 * (1.0 - mu);
         
-        out_color = vec4(vec3(1.0, 0.97, 0.92) * brightness, 1.0); // hit: the Sun
+        out_color = vec4(vec3(1.0, 0.97, 0.92) * brightness * SUN_INTENSITY, 1.0); // hit: the Sun
     } else {
         gl_FragDepth = 0.9999;
 
@@ -70,7 +73,7 @@ void main() {
         }
 
         // Miss: black space + the Sun's glow
-        out_color = vec4(vec3(1.0, 0.97, 0.92) * glow, 1.0);
+        out_color = vec4(vec3(1.0, 0.97, 0.92) * glow * SUN_INTENSITY, 1.0);
     }
 
     // Dithering: tiny per-pixel noise hides the 256-level steps (banding)
