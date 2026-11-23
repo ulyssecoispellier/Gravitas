@@ -398,7 +398,7 @@ impl ApplicationHandler for App {
                     let eye = self.camera.eye();
                     let ray_push = RayPushConstants {
                         view_proj: (projection * view).to_cols_array(),
-                        camera_pos: [eye.x, eye.y, eye.z, 0.0],
+                        camera_pos: [eye.x, eye.y, eye.z, (self.frame % 65536) as f32],
                         sun: [
                             star_pos.x as f32,
                             star_pos.y as f32,

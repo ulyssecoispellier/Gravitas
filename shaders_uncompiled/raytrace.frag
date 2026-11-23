@@ -10,7 +10,7 @@ layout(location = 0) out vec4 out_color;
 // Same layout as `RayPushConstants` in renderer.rs
 layout(push_constant) uniform Push {
     mat4 view_proj;
-    vec4 camera_pos;
+    vec4 camera_pos; // xyz = camera, w = frame number
     vec4 sun;      // xyz = centre, w = radius
 } push;
 
@@ -159,8 +159,10 @@ void main() {
 
     // Atmospheres (single scattering): march the view ray through each planet's gas,
     // adding the sunlight each lit sample scatters towards the camera
-    // Per-pixel random offset in [0, 1) for the atmosphere samples (hash, stable from frame to frame)
+    // Per-pixel random offset in [0, 1) for the atmosphere samples (hash of the pixel position)
     float jitter = fract(sin(dot(gl_FragCoord.xy, vec2(39.3468, 11.1352))) * 43758.5453);
+    // Shift it every frame by the golden ratio: successive frames cover [0, 1) evenly
+    jitter = fract(jitter + push.camera_pos.w * 0.618034);
     for (int i = 1; i <= 15; i++) {
         vec4 atmo = all_bodies.atmospheres[i];
         vec4 haze = all_bodies.haze[i];

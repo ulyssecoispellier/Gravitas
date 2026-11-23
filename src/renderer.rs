@@ -69,7 +69,7 @@ pub struct PushConstants {
 pub struct RayPushConstants {
     /// projection × view: world → screen (the shader inverts it)
     pub view_proj: [f32; 16],
-    /// Camera position (x, y, z), w = unused
+    /// Camera position (x, y, z), w = frame number (per-frame randomness)
     pub camera_pos: [f32; 4],
     /// Sun: centre (x, y, z), w = radius
     pub sun: [f32; 4],
