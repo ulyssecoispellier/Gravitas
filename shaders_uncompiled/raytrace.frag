@@ -125,6 +125,24 @@ vec3 random_hemisphere(vec3 normal, float r1, float r2) {
     return t * local.x + b * local.y + normal * local.z;
 }
 
+// First body hit by the ray: returns its index (-1 = none) and writes its distance into best_t
+int closest_hit(vec3 origin, vec3 dir, out float best_t) {
+    best_t = 1e30;
+    int best_index = -1;
+    
+    for (int i = 0; i < 16; i++) {
+        vec4 body = all_bodies.bodies[i];
+        if (body.w == 0.0) { continue; }
+        float t = ray_sphere(origin, dir, body.xyz, body.w);
+        if (t > 0.0 && t < best_t) {
+            best_t = t;
+            best_index = i;
+        }
+    }
+    
+    return best_index;
+}
+
 void main() {
     // The point far away behind this pixel, in the world (screen → world)
     vec4 far = inverse(push.view_proj) * vec4(screen_pos, 1.0, 1.0);
@@ -142,18 +160,9 @@ void main() {
     float jitter2 = fract(sin(dot(gl_FragCoord.xy, vec2(91.7151, 47.2386))) * 43758.5453);
     jitter2 = fract(jitter2 + push.camera_pos.w * 0.414214);
 
-    // Find the closest body this ray hits (smallest t)
-    float best_t = 1e30;
-    int best_index = -1;
-    for (int i = 0; i < 16; i++) {
-        vec4 body = all_bodies.bodies[i];
-        if (body.w == 0.0) { continue; }
-        float t = ray_sphere(origin, dir, body.xyz, body.w);
-        if (t > 0.0 && t < best_t) {
-            best_t = t;
-            best_index = i;
-        }
-    }
+    // Closest body along the camera ray
+    float best_t;
+    int best_index = closest_hit(origin, dir, best_t);
     
     // Body 0: the Sun
     if (best_index == 0) {
@@ -176,8 +185,21 @@ void main() {
         vec4 clip = push.view_proj * vec4(hit, 1.0);
         gl_FragDepth = clip.z / clip.w;
 
-        // Direct sunlight reflected by the surface
-        out_color = vec4(direct_light(best_index, hit), 1.0);
+        vec3 light = direct_light(best_index, hit);
+
+        vec3 n = normalize(hit - all_bodies.bodies[best_index].xyz);
+        vec3 bounce_dir = random_hemisphere(n, jitter, jitter2);
+        vec3 bounce_origin = hit + n * 0.0001;
+
+        float bounce_t;
+        int j = closest_hit(bounce_origin, bounce_dir, bounce_t);
+
+        if (j > 0) {
+            vec3 b = bounce_origin + best_t * bounce_dir;
+            light += albedo(best_index, hit) * direct_light(j, b);
+        }
+
+        out_color = vec4(light, 1.0);
         
     } else {
         gl_FragDepth = 0.9999;
