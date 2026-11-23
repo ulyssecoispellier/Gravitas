@@ -91,6 +91,8 @@ pub struct BodiesUniform {
     pub colours: [[f32; 4]; MAX_BODIES],
     /// rgb = scattering strength per colour (β, per planet radius), w = outer radius ÷ planet radius (0 = none)
     pub atmospheres: [[f32; 4]; MAX_BODIES],
+    /// rgb = Mie scattering strength per colour (β), w = forward bias g
+    pub haze: [[f32; 4]; MAX_BODIES],
 }
 
 /// Owns every Vulkan object. Created once by `new`, cleaned up by `Drop`.

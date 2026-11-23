@@ -118,7 +118,7 @@ Shaders are compiled automatically: `build.rs` runs `glslc` on every file in `sh
 ### 🎯 Main direction: a path-traced renderer
 Physically based light with multiple bounces.
 
-**Order:** 5 (atmospheres) first → moons (so bounced light has something to show) → 3 + 4 (bounces + accumulation).
+**Order:** 5 (atmospheres) ✅ → moons (so bounced light has something to show) → 3 + 4 (bounces + accumulation).
 
 | Step | | Status |
 |---|---|---|
@@ -126,7 +126,7 @@ Physically based light with multiple bounces.
 | 2 | All bodies in the ray pass as analytic spheres (lit, coloured, Earth textured, soft eclipses) | ✅ |
 | 3 | Bounces: random rays, albedo per body (moonlight, earthshine, twilight lighting the ground, soft shadows) | ⬜ |
 | 4 | Progressive accumulation to remove noise while the camera is still | ⬜ |
-| 5 | Atmospheres: rays scatter in the air and pick up its colour (blue sky, orange sunsets, hazy gas giants) — Rayleigh single scattering ✅ (per-planet β, density, planet shadow, extinction, phase, jitter) · Mie (dust, haze) next | 🚧 |
+| 5 | Atmospheres: rays scatter in the air and pick up its colour (blue sky, orange sunsets, hazy gas giants) — single scattering: Rayleigh (molecules) + Mie (dust, droplets), per-planet β, density, planet shadow, extinction, phase functions, jitter | ✅ |
 | 6 | Bloom on top of the HDR image — v1 ✅ (13×13 blur in the post pass), v2: downsampled blur chain for wide halos | 🚧 |
 | 7 | Auto-exposure: the image adapts to dark scenes like an eye or a camera (night sides become visible) | ⬜ |
 

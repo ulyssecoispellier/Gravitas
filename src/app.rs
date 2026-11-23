@@ -34,6 +34,8 @@ struct BodyData {
     colour: [f32; 3],
     /// Atmosphere: rgb = scattering strength per colour (β, per planet radius), w = outer radius ÷ planet radius (0 = none)
     atmosphere: [f32; 4],
+    /// Haze (Mie: dust, droplets): rgb = scattering strength per colour (β), w = forward bias g (0 = even, → 1 = forward)
+    haze: [f32; 4],
 }
 
 const BODIES: [BodyData; 8] = [
@@ -44,6 +46,7 @@ const BODIES: [BodyData; 8] = [
         radius: 0.035,
         colour: [0.6, 0.58, 0.55],
         atmosphere: [0.0, 0.0, 0.0, 0.0],
+        haze: [0.0, 0.0, 0.0, 0.0],
     },
     // Venus
     BodyData {
@@ -52,6 +55,7 @@ const BODIES: [BodyData; 8] = [
         radius: 0.075,
         colour: [0.9, 0.8, 0.55],
         atmosphere: [6.0, 5.0, 3.5, 1.12],
+        haze: [2.0, 2.0, 1.8, 0.7],
     },
     // Earth (textured)
     BodyData {
@@ -60,6 +64,7 @@ const BODIES: [BodyData; 8] = [
         radius: 0.08,
         colour: [0.3, 0.5, 0.9],
         atmosphere: [1.5, 3.6, 8.8, 1.15],
+        haze: [0.8, 0.8, 0.8, 0.76],
     },
     // Mars
     BodyData {
@@ -68,6 +73,7 @@ const BODIES: [BodyData; 8] = [
         radius: 0.05,
         colour: [0.8, 0.4, 0.25],
         atmosphere: [0.6, 0.35, 0.2, 1.06],
+        haze: [0.3, 0.4, 0.6, 0.8],
     },
     // Jupiter
     BodyData {
@@ -76,6 +82,7 @@ const BODIES: [BodyData; 8] = [
         radius: 0.25,
         colour: [0.85, 0.7, 0.5],
         atmosphere: [2.0, 1.6, 1.0, 1.05],
+        haze: [0.5, 0.45, 0.4, 0.7],
     },
     // Saturn
     BodyData {
@@ -84,6 +91,7 @@ const BODIES: [BodyData; 8] = [
         radius: 0.21,
         colour: [0.9, 0.8, 0.55],
         atmosphere: [2.0, 1.7, 1.1, 1.05],
+        haze: [0.5, 0.45, 0.4, 0.7],
     },
     // Uranus
     BodyData {
@@ -92,6 +100,7 @@ const BODIES: [BodyData; 8] = [
         radius: 0.12,
         colour: [0.6, 0.85, 0.9],
         atmosphere: [0.8, 2.5, 3.0, 1.08],
+        haze: [0.2, 0.2, 0.2, 0.7],
     },
     // Neptune
     BodyData {
@@ -100,6 +109,7 @@ const BODIES: [BodyData; 8] = [
         radius: 0.12,
         colour: [0.3, 0.45, 0.95],
         atmosphere: [0.6, 1.8, 5.0, 1.08],
+        haze: [0.2, 0.2, 0.2, 0.7],
     },
 ];
 
@@ -121,6 +131,8 @@ pub struct App {
     colours: Vec<[f32; 3]>,
     /// Atmosphere of each body, same order as `bodies` (Sun: none)
     atmospheres: Vec<[f32; 4]>,
+    /// Haze of each body, same order as `bodies` (Sun: none)
+    haze: Vec<[f32; 4]>,
     /// Number of frames drawn so far
     frame: u64,
     /// When the previous frame started, to measure how much time passed
@@ -316,6 +328,7 @@ impl ApplicationHandler for App {
                             if i == EARTH { 1.0 } else { 0.0 },
                         ];
                         bodies_data.atmospheres[i] = self.atmospheres[i];
+                        bodies_data.haze[i] = self.haze[i];
                     }
 
                     renderer
@@ -404,6 +417,9 @@ impl App {
                 .collect(),
             atmospheres: std::iter::once([0.0, 0.0, 0.0, 0.0])
                 .chain(BODIES.iter().map(|p| p.atmosphere))
+                .collect(),
+            haze: std::iter::once([0.0, 0.0, 0.0, 0.0])
+                .chain(BODIES.iter().map(|p| p.haze))
                 .collect(),
             frame: 0,
             last_frame: Instant::now(),

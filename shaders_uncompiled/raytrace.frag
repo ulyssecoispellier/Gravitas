@@ -18,6 +18,7 @@ layout(set = 0, binding = 1) uniform Bodies {
     vec4 bodies[16];
     vec4 colours[16];
     vec4 atmospheres[16]; // rgb = scattering strength per colour (β), w = outer radius ÷ planet radius (0 = none)
+    vec4 haze[16];        // rgb = Mie β (dust, droplets), w = forward bias g
 } all_bodies;
 
 layout(set = 0, binding = 2) uniform sampler2D sky;
@@ -152,6 +153,7 @@ void main() {
     float jitter = fract(sin(dot(gl_FragCoord.xy, vec2(39.3468, 11.1352))) * 43758.5453);
     for (int i = 1; i <= 15; i++) {
         vec4 atmo = all_bodies.atmospheres[i];
+        vec4 haze = all_bodies.haze[i];
 
         if (atmo.w == 0.0) { continue; }
 
@@ -170,7 +172,8 @@ void main() {
         float ds = (t_out - t_in) / VIEW_STEPS;
         // Optical depth from the camera to the current sample (running total)
         float view_depth = 0.0;
-        vec3 scatter = vec3(0);
+        vec3 scatter_r = vec3(0);
+        vec3 scatter_m = vec3(0);
 
         for (int s = 0; s < VIEW_STEPS; s++) {
             // Sample at a random point inside step s (jitter: bands become fine noise)
@@ -197,22 +200,26 @@ void main() {
                 light_depth += exp(-l_height / H) * l_ds / R;
             }
 
-            // Beer–Lambert: fraction of each colour surviving Sun → p → camera (blue fades first)
-            vec3 T = exp(-atmo.rgb * (view_depth + light_depth));
+            // Beer–Lambert through both gases: fraction of each colour surviving Sun → p → camera
+            vec3 T = exp(-(atmo.rgb + haze.rgb) * (view_depth + light_depth));
 
             // Rayleigh phase: twice as much light scattered along the Sun's axis as at 90°
             float mu = dot(dir, sun_dir);
-            float phase = 3 / (16 * PI) * (1 + mu * mu);
+            float phase_r = 3 / (16 * PI) * (1 + mu * mu);
+            // Mie phase (Henyey–Greenstein): strongly forward, a bright halo around the Sun
+            float g = haze.w;
+            float phase_m = (1.0 - g * g) / ( (4.0 * PI) * pow(1.0 + g * g - 2.0 * g * mu, 1.5));
 
             // Light scattered at p, dimmed on both legs (distances in planet radii, the same unit as β)
-            scatter += density * ds / R * T * phase;
+            scatter_r += density * ds / R * T * phase_r;
+            scatter_m += density * ds / R * T * phase_m;
         }
 
         // What lies behind the gas (ground, stars, Sun) is seen through all of it
-        out_color.rgb *= exp(-atmo.rgb * view_depth);
+        out_color.rgb *= exp(-(atmo.rgb + haze.rgb) * view_depth);
 
-        // Add the light the gas scattered towards the camera (β gives the colour)
-        out_color.rgb += SUN_INTENSITY * atmo.rgb * scatter;
+        // Add the light both gases scattered towards the camera (each with its own β and phase)
+        out_color.rgb += SUN_INTENSITY * (atmo.rgb * scatter_r + haze.rgb * scatter_m);
     }
     
     // Dithering: tiny per-pixel noise hides the 256-level steps (banding)
