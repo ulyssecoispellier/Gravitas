@@ -29,6 +29,7 @@ const float SUN_INTENSITY = 4.0;
 const float PI = 3.14159265;
 const int VIEW_STEPS = 32; // samples along the view ray inside an atmosphere
 const int LIGHT_STEPS = 8; // samples along each sample's ray towards the Sun
+const int BOUNCE_SAMPLES = 8; // aimed rays per nearby body, for the bounce light
 
 // Distance along the ray to the nearest hit, or -1.0 if it misses (same as ray.rs)
 float ray_sphere(vec3 origin, vec3 dir, vec3 center, float radius) {
@@ -143,6 +144,67 @@ int closest_hit(vec3 origin, vec3 dir, out float best_t) {
     return best_index;
 }
 
+// Random direction inside a cone (uniform), around `axis`, half-angle given by its cosine
+vec3 sample_cone(vec3 axis, float cos_max, float r1, float r2) {
+    // Direction around a flat floor's up = Z, at most θ_max away from it
+    float phi = 2.0 * PI * r1;
+    float cos_t = 1.0 - r2 * (1.0 - cos_max);
+    float sin_t = sqrt(1.0 - cos_t * cos_t);
+    vec3 local = vec3(sin_t * cos(phi), sin_t * sin(phi), cos_t);
+
+    // Two axes at right angles to the cone's axis and to each other
+    vec3 helper = abs(axis.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
+    vec3 t = normalize(cross(helper, axis));
+    vec3 b = cross(axis, t);
+
+    return t * local.x + b * local.y + axis * local.z;
+}
+
+// Light that the other bodies reflect onto `point` (one bounce): for each body big enough in the sky,
+// rays aimed inside its cone (importance sampling), weighted by the cone's solid angle
+vec3 bounce_light(int self_index, vec3 point, float r1, float r2) {
+    vec3 n = normalize(point - all_bodies.bodies[self_index].xyz);
+    vec3 start = point + n * 0.0001;
+    vec3 total = vec3(0.0);
+
+    for (int j = 1; j < 16; j++) {
+        vec4 body = all_bodies.bodies[j];
+        if (body.w == 0.0) { continue; }
+        if (j == self_index) { continue; }
+
+        vec3 to_body = body.xyz - start;
+        float dist = length(to_body);
+        float sin_max = body.w / dist;
+        // Too small in the sky (under ~1°) to light us noticeably
+        if (sin_max < 0.02) { continue; }
+
+        // The cone the body fills in our sky: edge cosine and solid angle Ω
+        float cos_max = sqrt(1.0 - sin_max * sin_max);
+        float omega = 2.0 * PI * (1.0 - cos_max);
+
+        // Stratified samples: golden-ratio shifts spread them evenly over the body's disc
+        for (int k = 0; k < BOUNCE_SAMPLES; k++) {
+            float s1 = fract(r1 + float(k) * 0.618034);
+            float s2 = fract(r2 + float(k) * 0.414214);
+            vec3 ray = sample_cone(to_body / dist, cos_max, s1, s2);
+
+            float cos_theta = dot(n, ray);
+            // Below our horizon: the ray would go into our own ground
+            if (cos_theta <= 0.0) { continue; }
+
+            float t;
+            int hit_j = closest_hit(start, ray, t);
+            // Something else is in the way (another moon, a planet)
+            if (hit_j != j) { continue; }
+
+            vec3 b = start + t * ray;
+            total += direct_light(j, b) * cos_theta * omega / PI / float(BOUNCE_SAMPLES);
+        }
+    }
+
+    return total;
+}
+
 void main() {
     // The point far away behind this pixel, in the world (screen → world)
     vec4 far = inverse(push.view_proj) * vec4(screen_pos, 1.0, 1.0);
@@ -187,17 +249,8 @@ void main() {
 
         vec3 light = direct_light(best_index, hit);
 
-        vec3 n = normalize(hit - all_bodies.bodies[best_index].xyz);
-        vec3 bounce_dir = random_hemisphere(n, jitter, jitter2);
-        vec3 bounce_origin = hit + n * 0.0001;
-
-        float bounce_t;
-        int j = closest_hit(bounce_origin, bounce_dir, bounce_t);
-
-        if (j > 0) {
-            vec3 b = bounce_origin + best_t * bounce_dir;
-            light += albedo(best_index, hit) * direct_light(j, b);
-        }
+        // Plus light bounced off the other bodies (Earthshine, Jupiter-shine…)
+        light += albedo(best_index, hit) * bounce_light(best_index, hit, jitter, jitter2);
 
         out_color = vec4(light, 1.0);
         

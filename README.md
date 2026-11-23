@@ -124,8 +124,8 @@ Physically based light with multiple bounces.
 |---|---|---|
 | 1 | HDR scene image + tone mapping | ✅ |
 | 2 | All bodies in the ray pass as analytic spheres (lit, coloured, Earth textured, soft eclipses) | ✅ |
-| 3 | Bounces: random rays, albedo per body (moonlight, earthshine, twilight lighting the ground, soft shadows) | ⬜ |
-| 4 | Progressive accumulation to remove noise while the camera is still | ⬜ |
+| 3 | Bounces (moonlight, earthshine, twilight lighting the ground): one diffuse bounce, rays aimed at each body's cone (importance sampling), 8 stratified samples per body: live and nearly clean | ✅ |
+| 4 | Noise: light temporal blend (works live) · full accumulation as a paused "photo mode" | ⬜ |
 | 5 | Atmospheres: rays scatter in the air and pick up its colour (blue sky, orange sunsets, hazy gas giants) — single scattering: Rayleigh (molecules) + Mie (dust, droplets), per-planet β, density, planet shadow, eclipses from other bodies, extinction, phase functions, jitter | ✅ |
 | 6 | Bloom on top of the HDR image — v1 ✅ (13×13 blur in the post pass), v2: downsampled blur chain for wide halos | 🚧 |
 | 7 | Auto-exposure: the image adapts to dark scenes like an eye or a camera (night sides become visible) | ⬜ |
