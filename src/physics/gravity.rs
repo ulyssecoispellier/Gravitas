@@ -4,11 +4,11 @@ use glam::DVec3;
 
 use crate::physics::Body;
 
-/// Gravitational constant. 1.0 instead of 6.674e-11, because our units are arbitrary.
-pub const G: f64 = 1.0;
+/// Gravitational constant in AU, years and Sun masses: 4π² (Kepler: an orbit at 1 AU takes 1 year)
+pub const G: f64 = 4.0 * std::f64::consts::PI * std::f64::consts::PI;
 /// Softening length: stops the force from exploding when two bodies get very close.
-/// Keep it much smaller than the smallest orbit (the moon's), or it weakens gravity there.
-pub const EPSILON: f64 = 0.01;
+/// 1e-6 AU ≈ 150 km: far below any real gap between bodies, so it never weakens real gravity.
+pub const EPSILON: f64 = 1e-6;
 
 /// Total gravitational acceleration on body `i`, caused by every other body.
 ///

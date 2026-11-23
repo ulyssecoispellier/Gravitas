@@ -14,22 +14,21 @@ use crate::camera::Camera;
 use crate::physics::{Body, orbit_speed, step_euler};
 use crate::renderer::{BodiesUniform, MAX_BODIES, PushConstants, RayPushConstants, Renderer};
 
-const DT: f64 = 0.001; // size of one physics step, in seconds
+const DT: f64 = 1e-5; // size of one physics step, in years
 
-// The Solar System (G = 1, Sun mass = 1).
-// Masses: real, relative to the Sun. Distances: compressed (2·√AU) so the outer planets fit on screen.
-// Radii: exaggerated for visibility (real ones would be invisible dots)
+// The Solar System at real scale, in astronomical units:
+// distances and radii in AU (Sun–Earth = 1), time in years, masses in Sun masses (G = 4π²)
 const SUN_MASS: f64 = 1.0;
-const SUN_RADIUS: f64 = 0.5;
+const SUN_RADIUS: f64 = 4.65e-3;
 const SUN_COLOUR: [f32; 3] = [1.0, 0.97, 0.92]; // white (yellow only through an atmosphere)
 
 /// One planet's starting data.
 struct BodyData {
-    /// Distance from the Sun
+    /// Distance from the Sun (AU)
     distance: f64,
     /// Mass, relative to the Sun
     mass: f64,
-    /// Radius on screen
+    /// Real radius (AU)
     radius: f64,
     /// Base colour (r, g, b)
     colour: [f32; 3],
@@ -42,72 +41,72 @@ struct BodyData {
 const BODIES: [BodyData; 8] = [
     // Mercury
     BodyData {
-        distance: 1.25,
+        distance: 0.387,
         mass: 1.66e-7,
-        radius: 0.035,
+        radius: 1.631e-5,
         colour: [0.6, 0.58, 0.55],
         atmosphere: [0.0, 0.0, 0.0, 0.0],
         haze: [0.0, 0.0, 0.0, 0.0],
     },
     // Venus
     BodyData {
-        distance: 1.70,
+        distance: 0.723,
         mass: 2.45e-6,
-        radius: 0.075,
+        radius: 4.045e-5,
         colour: [0.9, 0.8, 0.55],
         atmosphere: [6.0, 5.0, 3.5, 1.12],
         haze: [2.0, 2.0, 1.8, 0.7],
     },
     // Earth (textured)
     BodyData {
-        distance: 2.00,
-        mass: 3.00e-6,
-        radius: 0.08,
+        distance: 1.000,
+        mass: 3.003e-6,
+        radius: 4.259e-5,
         colour: [0.3, 0.5, 0.9],
         atmosphere: [1.5, 3.6, 8.8, 1.15],
         haze: [0.8, 0.8, 0.8, 0.76],
     },
     // Mars
     BodyData {
-        distance: 2.47,
+        distance: 1.524,
         mass: 3.23e-7,
-        radius: 0.05,
+        radius: 2.266e-5,
         colour: [0.8, 0.4, 0.25],
         atmosphere: [0.6, 0.35, 0.2, 1.06],
         haze: [0.3, 0.4, 0.6, 0.8],
     },
     // Jupiter
     BodyData {
-        distance: 4.56,
+        distance: 5.203,
         mass: 9.55e-4,
-        radius: 0.25,
+        radius: 4.673e-4,
         colour: [0.85, 0.7, 0.5],
         atmosphere: [2.0, 1.6, 1.0, 1.05],
         haze: [0.5, 0.45, 0.4, 0.7],
     },
     // Saturn
     BodyData {
-        distance: 6.19,
+        distance: 9.537,
         mass: 2.86e-4,
-        radius: 0.21,
+        radius: 3.893e-4,
         colour: [0.9, 0.8, 0.55],
         atmosphere: [2.0, 1.7, 1.1, 1.05],
         haze: [0.5, 0.45, 0.4, 0.7],
     },
     // Uranus
     BodyData {
-        distance: 8.76,
+        distance: 19.19,
         mass: 4.37e-5,
-        radius: 0.12,
+        radius: 1.695e-4,
         colour: [0.6, 0.85, 0.9],
         atmosphere: [0.8, 2.5, 3.0, 1.08],
         haze: [0.2, 0.2, 0.2, 0.7],
     },
     // Neptune
     BodyData {
-        distance: 10.97,
+        distance: 30.07,
         mass: 5.15e-5,
-        radius: 0.12,
+        radius: 1.646e-4,
         colour: [0.3, 0.45, 0.95],
         atmosphere: [0.6, 1.8, 5.0, 1.08],
         haze: [0.2, 0.2, 0.2, 0.7],
@@ -118,11 +117,11 @@ const BODIES: [BodyData; 8] = [
 struct MoonData {
     /// Index of its planet in `bodies` (Earth = 3, Jupiter = 5, Saturn = 6, Neptune = 8)
     parent: usize,
-    /// Distance from the planet's centre
+    /// Distance from the planet's centre (AU)
     distance: f64,
-    /// Time for one orbit, in sim seconds (negative = retrograde)
+    /// Time for one orbit, in years (negative = retrograde)
     period: f64,
-    /// Radius on screen
+    /// Real radius (AU)
     radius: f64,
     /// Base colour (r, g, b), also its average albedo
     colour: [f32; 3],
@@ -132,14 +131,14 @@ struct MoonData {
     haze: [f32; 4],
 }
 
-/// Major moons, written to GPU slots 9..15 every frame. Periods keep the real ratios (Earth's year ≈ 17.8 s)
+/// Major moons, written to GPU slots 9..15 every frame. Real distances (AU) and periods (years)
 const MOONS: [MoonData; 7] = [
     // Moon (Earth)
     MoonData {
         parent: 3,
-        distance: 0.2,
-        period: 1.33,
-        radius: 0.022,
+        distance: 2.570e-3,
+        period: 0.0748,
+        radius: 1.161e-5,
         colour: [0.6, 0.6, 0.58],
         atmosphere: [0.0, 0.0, 0.0, 0.0],
         haze: [0.0, 0.0, 0.0, 0.0],
@@ -147,9 +146,9 @@ const MOONS: [MoonData; 7] = [
     // Io (Jupiter)
     MoonData {
         parent: 5,
-        distance: 0.35,
-        period: 0.086,
-        radius: 0.030,
+        distance: 2.820e-3,
+        period: 0.00485,
+        radius: 1.218e-5,
         colour: [0.9, 0.8, 0.4],
         atmosphere: [0.0, 0.0, 0.0, 0.0],
         haze: [0.0, 0.0, 0.0, 0.0],
@@ -157,9 +156,9 @@ const MOONS: [MoonData; 7] = [
     // Europa (Jupiter)
     MoonData {
         parent: 5,
-        distance: 0.42,
-        period: 0.173,
-        radius: 0.026,
+        distance: 4.486e-3,
+        period: 0.00972,
+        radius: 1.043e-5,
         colour: [0.85, 0.8, 0.7],
         atmosphere: [0.0, 0.0, 0.0, 0.0],
         haze: [0.0, 0.0, 0.0, 0.0],
@@ -167,9 +166,9 @@ const MOONS: [MoonData; 7] = [
     // Ganymede (Jupiter)
     MoonData {
         parent: 5,
-        distance: 0.52,
-        period: 0.348,
-        radius: 0.040,
+        distance: 7.155e-3,
+        period: 0.0196,
+        radius: 1.761e-5,
         colour: [0.6, 0.55, 0.5],
         atmosphere: [0.0, 0.0, 0.0, 0.0],
         haze: [0.0, 0.0, 0.0, 0.0],
@@ -177,9 +176,9 @@ const MOONS: [MoonData; 7] = [
     // Callisto (Jupiter)
     MoonData {
         parent: 5,
-        distance: 0.68,
-        period: 0.81,
-        radius: 0.037,
+        distance: 1.2585e-2,
+        period: 0.0457,
+        radius: 1.611e-5,
         colour: [0.4, 0.37, 0.33],
         atmosphere: [0.0, 0.0, 0.0, 0.0],
         haze: [0.0, 0.0, 0.0, 0.0],
@@ -187,9 +186,9 @@ const MOONS: [MoonData; 7] = [
     // Titan (Saturn)
     MoonData {
         parent: 6,
-        distance: 0.40,
-        period: 0.77,
-        radius: 0.035,
+        distance: 8.168e-3,
+        period: 0.0436,
+        radius: 1.721e-5,
         colour: [0.8, 0.6, 0.3],
         atmosphere: [0.3, 0.4, 0.6, 1.3],
         haze: [1.5, 1.0, 0.4, 0.6],
@@ -197,9 +196,9 @@ const MOONS: [MoonData; 7] = [
     // Triton (Neptune, retrograde)
     MoonData {
         parent: 8,
-        distance: 0.22,
-        period: -0.286,
-        radius: 0.025,
+        distance: 2.371e-3,
+        period: -0.0161,
+        radius: 9.04e-6,
         colour: [0.75, 0.7, 0.7],
         atmosphere: [0.0, 0.0, 0.0, 0.0],
         haze: [0.0, 0.0, 0.0, 0.0],
@@ -297,10 +296,10 @@ impl ApplicationHandler for App {
                     }
                     // ← / →: slow down / speed up time (×0 to ×10)
                     (Key::Named(NamedKey::ArrowLeft), ElementState::Pressed) => {
-                        self.sim_speed = (self.sim_speed - 0.25).clamp(0.0, 50.0);
+                        self.sim_speed = (self.sim_speed / 2.0).clamp(0.0, 50.0);
                     }
                     (Key::Named(NamedKey::ArrowRight), ElementState::Pressed) => {
-                        self.sim_speed = (self.sim_speed + 0.25).clamp(0.0, 50.0);
+                        self.sim_speed = (self.sim_speed * 2.0).clamp(0.0, 50.0);
                     }
                     // C: retro dithering on/off
                     (Key::Character(key), ElementState::Pressed)
@@ -557,7 +556,7 @@ impl App {
             dragging: false,
             panning: false,
             last_cursor: (0.0, 0.0),
-            sim_speed: 1.0,
+            sim_speed: 0.01,
             retro: false,
             show_meshes: false,
         }
