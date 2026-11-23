@@ -64,6 +64,11 @@ vulkaninfo --summary   # check that your GPU is detected
 ```
 The project's `.cargo/config.toml` tells the program where Homebrew installed Vulkan, so there's nothing else to set up.
 
+### Sky texture (not in git, 36 MB)
+```bash
+curl -L -o textures/sky.exr https://svs.gsfc.nasa.gov/vis/a000000/a004800/a004851/starmap_2020_4k.exr
+```
+
 ### Run
 ```bash
 cargo run              # debug build, Vulkan validation layers ON (🟡 warnings, 🔴 errors in the terminal)
@@ -109,7 +114,7 @@ Physically based light with multiple bounces.
 | 3 | Bounces: random rays, albedo per body (moonlight, earthshine, soft shadows) | ⬜ |
 | 4 | Progressive accumulation to remove noise while the camera is still | ⬜ |
 | 5 | Atmospheres: rays scatter in the air and pick up its colour (blue sky, orange sunsets, hazy gas giants) | ⬜ |
-| 6 | Bloom on top of the HDR image | ⬜ |
+| 6 | Bloom on top of the HDR image — v1 ✅ (13×13 blur in the post pass), v2: downsampled blur chain for wide halos | 🚧 |
 
 ### 🌍 The Solar System
 | | Status |
@@ -119,7 +124,7 @@ Physically based light with multiple bounces.
 | Major moons on "on rails" orbits (Moon, Phobos & Deimos, Galilean moons, Titan…) + their textures | ⬜ |
 | Saturn's rings: flat disk mesh + transparent striped texture | ⬜ |
 | Asteroid belt + Kuiper belt: thousands of rocks in one draw call (GPU instancing) | ⬜ |
-| Skybox: starfield / Milky Way background | ⬜ |
+| Skybox: starfield / Milky Way background (NASA Deep Star Maps, `textures/sky.exr`) | 🚧 |
 | Soft shadows: the Sun as a disc (umbra cone, penumbra, annular eclipses) | ⬜ |
 
 ### 💻 Cross-platform (Windows · Linux · macOS)

@@ -258,3 +258,56 @@ pub(super) fn write_image_descriptor(
         .image_info(image_infos);
     unsafe { device.update_descriptor_sets(&[write], &[] as &[vk::CopyDescriptorSet]) };
 }
+
+/// Uploads `pixels` into a new GPU-only texture: image + staging buffer + copy, then frees the staging buffer.
+/// Returns the image, its memory and its view, ready to be sampled by shaders.
+pub(super) fn create_texture<T: Copy>(
+    instance: &Instance,
+    device: &Device,
+    physical_device: vk::PhysicalDevice,
+    queue: vk::Queue,
+    pool: vk::CommandPool,
+    pixels: &[T],
+    width: u32,
+    height: u32,
+    format: vk::Format,
+) -> Result<(vk::Image, vk::DeviceMemory, vk::ImageView)> {
+    // Texture image (copy destination, sampled by shaders)
+    let (texture_image, texture_memory, texture_view) = create_image(
+        instance,
+        device,
+        physical_device,
+        vk::Extent2D { width, height },
+        format,
+        vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
+        vk::ImageAspectFlags::COLOR,
+    )?;
+
+    // Staging buffer (CPU-writable copy source)
+    let (staging_buffer, staging_memory) = create_buffer(
+        instance,
+        device,
+        physical_device,
+        vk::BufferUsageFlags::TRANSFER_SRC,
+        pixels,
+    )?;
+
+    // Upload: staging buffer → texture image
+    copy_buffer_to_image(
+        device,
+        queue,
+        pool,
+        staging_buffer,
+        texture_image,
+        width,
+        height,
+    )?;
+
+    // Staging buffer no longer needed
+    unsafe {
+        device.destroy_buffer(staging_buffer, None);
+        device.free_memory(staging_memory, None);
+    }
+
+    Ok((texture_image, texture_memory, texture_view))
+}

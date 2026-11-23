@@ -30,7 +30,7 @@ mod swapchain;
 use device::{create_logical_device, pick_physical_device};
 use instance::{create_instance, create_messenger};
 use pipeline::{create_pipeline, create_shader_module};
-use resources::{copy_buffer_to_image, create_buffer, create_image, write_image_descriptor};
+use resources::{create_buffer, create_image, create_texture, write_image_descriptor};
 use swapchain::{Swapchain, create_swapchain};
 
 /// From this Vulkan version on, macOS needs the "portability" extensions to see MoltenVK / KosmicKrisp
@@ -161,6 +161,9 @@ pub struct Renderer {
     texture_memory: vk::DeviceMemory,
     /// How shaders see `texture_image`
     texture_view: vk::ImageView,
+    sky_image: vk::Image,
+    sky_memory: vk::DeviceMemory,
+    sky_view: vk::ImageView,
     /// Sampler for `texture_view`
     sampler: vk::Sampler,
     /// Layout of set 0: binding 0 = texture + sampler
@@ -315,29 +318,6 @@ impl Renderer {
         let (tex_width, tex_height) = img.dimensions();
         let pixels = img.into_raw();
 
-        // Texture image (copy destination, sampled by shaders)
-        let (texture_image, texture_memory, texture_view) = create_image(
-            &instance,
-            &device,
-            physical_device,
-            vk::Extent2D {
-                width: tex_width,
-                height: tex_height,
-            },
-            vk::Format::R8G8B8A8_SRGB,
-            vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
-            vk::ImageAspectFlags::COLOR,
-        )?;
-
-        // Staging buffer (CPU-writable copy source)
-        let (staging_buffer, staging_memory) = create_buffer(
-            &instance,
-            &device,
-            physical_device,
-            vk::BufferUsageFlags::TRANSFER_SRC,
-            &pixels,
-        )?;
-
         // Uniform buffer: every body's position + radius, read by the planets' shader (shadows)
         let (bodies_buffer, bodies_memory) = create_buffer(
             &instance,
@@ -347,22 +327,36 @@ impl Renderer {
             &[BodiesUniform::zeroed()],
         )?;
 
-        // Upload: staging buffer → texture image
-        copy_buffer_to_image(
+        let (texture_image, texture_memory, texture_view) = create_texture(
+            &instance,
             &device,
+            physical_device,
             graphics_queue,
             command_pool,
-            staging_buffer,
-            texture_image,
+            &pixels,
             tex_width,
             tex_height,
+            vk::Format::R8G8B8A8_SRGB,
         )?;
 
-        // Staging buffer no longer needed
-        unsafe {
-            device.destroy_buffer(staging_buffer, None);
-            device.free_memory(staging_memory, None);
-        }
+        let sky = image::open("textures/sky.exr")?.to_rgba32f();
+        let (sky_width, sky_height) = sky.dimensions();
+        let sky_floats = sky.into_raw();
+
+        let sky_pixels: Vec<half::f16> =
+            sky_floats.iter().map(|x| half::f16::from_f32(*x)).collect();
+
+        let (sky_image, sky_memory, sky_view) = create_texture(
+            &instance,
+            &device,
+            physical_device,
+            graphics_queue,
+            command_pool,
+            &sky_pixels,
+            sky_width,
+            sky_height,
+            HDR_FORMAT,
+        )?;
 
         // Sampler: linear filtering, u wraps around the sphere, v clamped at the poles
         let sampler_info = vk::SamplerCreateInfo::builder()
@@ -384,7 +378,6 @@ impl Renderer {
         let descriptor_pool = unsafe {
             device.create_descriptor_pool(
                 &vk::DescriptorPoolCreateInfo::builder()
-                    .pool_sizes(&[pool_size])
                     .pool_sizes(&[pool_size, uniform_pool_size])
                     .max_sets(2),
                 None,
@@ -491,6 +484,9 @@ impl Renderer {
             texture_image,
             texture_memory,
             texture_view,
+            sky_image,
+            sky_memory,
+            sky_view,
             sampler,
             descriptor_set_layout,
             descriptor_pool,
@@ -953,6 +949,9 @@ impl Drop for Renderer {
             self.device.destroy_image_view(self.texture_view, None);
             self.device.destroy_image(self.texture_image, None);
             self.device.free_memory(self.texture_memory, None);
+            self.device.destroy_image_view(self.sky_view, None);
+            self.device.destroy_image(self.sky_image, None);
+            self.device.free_memory(self.sky_memory, None);
             // Sampler + descriptors (the pool frees its sets)
             self.device.destroy_sampler(self.sampler, None);
             self.device

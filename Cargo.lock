@@ -719,6 +719,7 @@ dependencies = [
  "anyhow",
  "bytemuck",
  "glam",
+ "half",
  "image",
  "vulkanalia",
  "winit",
