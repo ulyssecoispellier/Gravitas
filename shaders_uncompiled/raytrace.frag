@@ -20,6 +20,7 @@ layout(set = 0, binding = 1) uniform Bodies {
 } all_bodies;
 
 layout(set = 0, binding = 2) uniform sampler2D sky;
+layout(set = 0, binding = 0) uniform sampler2D planet_texture;
 
 // How bright the Sun is compared with a lit planet (HDR: can be much more than 1.0)
 const float SUN_INTENSITY = 4.0;
@@ -85,6 +86,8 @@ void main() {
 
         // Diffuse lighting: how much this point faces the Sun
         vec3 normal = normalize(hit - all_bodies.bodies[best_index].xyz);
+        float pu = atan(normal.y, normal.x) / (2.0 * PI);
+        float pv = acos(normal.z) / PI;
         vec3 light_dir = normalize(push.sun.xyz - hit);
         float brightness = max(dot(normal, light_dir), 0.0);
 
@@ -110,7 +113,9 @@ void main() {
             brightness *= 1.0 - cover;
         }
         
-        out_color = vec4(all_bodies.colours[best_index].rgb * brightness, 1.0);
+        vec3 base = mix(all_bodies.colours[best_index].rgb, texture(planet_texture, vec2(pu, pv)).rgb, all_bodies.colours[best_index].w);
+        out_color = vec4(base * brightness, 1.0);
+        
     } else {
         gl_FragDepth = 0.9999;
 

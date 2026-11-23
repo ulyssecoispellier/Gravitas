@@ -301,7 +301,7 @@ impl ApplicationHandler for App {
                             self.colours[i][0],
                             self.colours[i][1],
                             self.colours[i][2],
-                            0.0,
+                            if i == EARTH { 1.0 } else { 0.0 },
                         ];
                     }
 

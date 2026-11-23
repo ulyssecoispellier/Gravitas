@@ -155,7 +155,7 @@ pub struct Renderer {
     post_pipeline: vk::Pipeline,
     /// Set 0 of the post pass: the scene image
     post_descriptor_set: vk::DescriptorSet,
-    /// The rocky planet's texture (pixels from textures/rocky.png)
+    /// Earth's texture (pixels from textures/earth/8k_earth_daymap.jpg)
     texture_image: vk::Image,
     /// The memory behind `texture_image` (GPU-only)
     texture_memory: vk::DeviceMemory,
@@ -170,7 +170,7 @@ pub struct Renderer {
     descriptor_set_layout: vk::DescriptorSetLayout,
     /// Pool for `descriptor_set`
     descriptor_pool: vk::DescriptorPool,
-    /// Set 0: the rocky planet texture
+    /// Set 0: Earth texture (0), bodies (1), sky (2)
     descriptor_set: vk::DescriptorSet,
     /// Every body's position + radius (uniform buffer, read by the planets' shader)
     bodies_buffer: vk::Buffer,
@@ -322,8 +322,8 @@ impl Renderer {
             true,
         )?;
 
-        // 7. Rocky planet texture: load as RGBA8
-        let img = image::open("textures/rocky.png")?.to_rgba8();
+        // 7. Earth texture (Solar System Scope 8k day map): load as RGBA8
+        let img = image::open("textures/earth/8k_earth_daymap.jpg")?.to_rgba8();
         let (tex_width, tex_height) = img.dimensions();
         let pixels = img.into_raw();
 

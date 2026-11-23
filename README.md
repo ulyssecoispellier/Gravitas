@@ -69,6 +69,15 @@ The project's `.cargo/config.toml` tells the program where Homebrew installed Vu
 curl -L -o textures/sky.exr https://svs.gsfc.nasa.gov/vis/a000000/a004800/a004851/starmap_2020_4k.exr
 ```
 
+### Earth textures (not in git, from [Solar System Scope](https://www.solarsystemscope.com/textures/), CC BY 4.0)
+```bash
+mkdir -p textures/earth && cd textures/earth
+curl -L -O https://www.solarsystemscope.com/textures/download/8k_earth_daymap.jpg
+curl -L -O https://www.solarsystemscope.com/textures/download/8k_earth_normal_map.tif
+curl -L -O https://www.solarsystemscope.com/textures/download/8k_earth_specular_map.tif
+cd ../..
+```
+
 ### Run
 ```bash
 cargo run              # debug build, Vulkan validation layers ON (🟡 warnings, 🔴 errors in the terminal)
@@ -119,7 +128,9 @@ Physically based light with multiple bounces.
 ### 🌍 The Solar System
 | | Status |
 |---|---|
-| Real colour textures + normal maps for the rocky planets (texture array; normals computed in Rust from NASA/USGS elevation maps) | ⬜ |
+| Earth: real 8k day map in the ray pass (UV from the hit normal) | ✅ |
+| Earth: normal map + specular (ocean glints) | ⬜ |
+| Real colour textures + normal maps for the other rocky planets (texture array) | ⬜ |
 | Axial tilt + rotation per planet (Venus upside down, Uranus on its side, both spinning backwards) | ⬜ |
 | Major moons on "on rails" orbits (Moon, Phobos & Deimos, Galilean moons, Titan…) + their textures | ⬜ |
 | Saturn's rings: flat disk mesh + transparent striped texture | ⬜ |
