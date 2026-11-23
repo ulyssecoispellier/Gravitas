@@ -136,14 +136,25 @@ Physically based light with multiple bounces.
 | Earth: real 8k day map in the ray pass (UV from the hit normal) | ✅ |
 | Earth: normal map + specular (ocean glints) | ⬜ |
 | Earth: city lights on the night side (night map, shown where sunlight ≈ 0) | ⬜ |
-| Real colour textures + normal maps for the other rocky planets (texture array) | ⬜ |
+| Texture array: one layer per body (planets + moons), `colours.w` = layer index; base colour kept as albedo for bounces | ⬜ |
+| Real maps for every body (Solar System Scope; NASA/USGS for Galilean moons, Titan, Triton) + normal maps for rocky bodies | ⬜ |
 | Axial tilt + rotation per planet (Venus upside down, Uranus on its side, both spinning backwards) | ⬜ |
-| Major moons on "on rails" orbits (Moon, Phobos & Deimos, Galilean moons, Titan…) + their textures | ⬜ |
+| Major moons on rails: Moon, Io, Europa, Ganymede, Callisto, Titan, Triton (retrograde) | ✅ |
+| More moons (Phobos & Deimos, …): needs more than 16 body slots | ⬜ |
 | Saturn's rings: flat disk mesh + transparent striped texture | ⬜ |
 | Asteroid belt + Kuiper belt: thousands of rocks in one draw call (GPU instancing) | ⬜ |
 | Skybox: starfield / Milky Way background (NASA Deep Star Maps, `textures/sky.exr`) | ✅ |
 | Rotate the sky from galactic to ecliptic coordinates (real Milky Way orientation) | ⬜ |
 | Soft shadows: the Sun as a disc (umbra cone, penumbra, annular eclipses) | ⬜ |
+
+### 🔭 Real scale & navigation (later)
+| | Status |
+|---|---|
+| Real sizes and distances for every body (no more exaggeration): moons can then stay inside their planet's Hill sphere and orbit with real gravity | ⬜ |
+| Precision at real scale: camera-relative positions (f64 on the CPU, small f32 offsets on the GPU) + a depth setup that handles huge distance ranges | ⬜ |
+| Collapsible side panel listing every body (planets + moons); click one to focus it | ⬜ |
+| Smooth camera flight to the selected body (eased animation of target + distance) | ⬜ |
+| Time speed that adapts to the focused body, so fast moons stay watchable | ⬜ |
 
 ### 💻 Cross-platform (Windows · Linux · macOS)
 | | Status |

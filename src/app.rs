@@ -2,6 +2,7 @@
 
 use bytemuck::Zeroable;
 use glam::{DVec3, Mat4, Vec3};
+use std::f64::consts::TAU;
 use std::time::Instant;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
@@ -113,6 +114,73 @@ const BODIES: [BodyData; 8] = [
     },
 ];
 
+/// One moon on rails: a fixed circular orbit around its planet (no gravity, see README).
+struct MoonData {
+    /// Index of its planet in `bodies` (Earth = 3, Jupiter = 5, Saturn = 6, Neptune = 8)
+    parent: usize,
+    /// Distance from the planet's centre
+    distance: f64,
+    /// Time for one orbit, in sim seconds (negative = retrograde)
+    period: f64,
+    /// Radius on screen
+    radius: f64,
+    /// Base colour (r, g, b), also its average albedo
+    colour: [f32; 3],
+}
+
+/// Major moons, written to GPU slots 9..15 every frame. Periods keep the real ratios (Earth's year ≈ 17.8 s)
+const MOONS: [MoonData; 7] = [
+    MoonData {
+        parent: 3,
+        distance: 0.2,
+        period: 1.33,
+        radius: 0.022,
+        colour: [0.6, 0.6, 0.58],
+    },
+    MoonData {
+        parent: 5,
+        distance: 0.35,
+        period: 0.086,
+        radius: 0.030,
+        colour: [0.9, 0.8, 0.4],
+    },
+    MoonData {
+        parent: 5,
+        distance: 0.42,
+        period: 0.173,
+        radius: 0.026,
+        colour: [0.85, 0.8, 0.7],
+    },
+    MoonData {
+        parent: 5,
+        distance: 0.52,
+        period: 0.348,
+        radius: 0.040,
+        colour: [0.6, 0.55, 0.5],
+    },
+    MoonData {
+        parent: 5,
+        distance: 0.68,
+        period: 0.81,
+        radius: 0.037,
+        colour: [0.4, 0.37, 0.33],
+    },
+    MoonData {
+        parent: 6,
+        distance: 0.40,
+        period: 0.77,
+        radius: 0.035,
+        colour: [0.8, 0.6, 0.3],
+    },
+    MoonData {
+        parent: 8,
+        distance: 0.22,
+        period: -0.286,
+        radius: 0.025,
+        colour: [0.75, 0.7, 0.7],
+    },
+];
+
 /// Index of the textured body in `bodies` (Sun = 0, Mercury = 1, Venus = 2, Earth = 3)
 const EARTH: usize = 3;
 
@@ -139,6 +207,8 @@ pub struct App {
     last_frame: Instant,
     /// Real time not simulated yet (see the fixed timestep loop)
     accumulator: f64,
+    /// Simulated time since start, in sim seconds (drives the moons)
+    sim_time: f64,
     /// The orbit camera, controlled with the mouse
     camera: Camera,
     /// Is the left mouse button held down?
@@ -235,6 +305,7 @@ impl ApplicationHandler for App {
                 self.accumulator += frame_time * self.sim_speed;
                 while self.accumulator >= DT {
                     step_euler(&mut self.bodies, DT);
+                    self.sim_time += DT;
                     self.accumulator -= DT;
                 }
 
@@ -331,6 +402,22 @@ impl ApplicationHandler for App {
                         bodies_data.haze[i] = self.haze[i];
                     }
 
+                    // Moons on rails: position = planet + circle at angle 2π·t/period, in slots 9..15
+                    for (m, moon) in MOONS.iter().enumerate() {
+                        let slot = 1 + BODIES.len() + m;
+                        let centre = self.bodies[moon.parent].pos();
+                        let angle = TAU * self.sim_time / moon.period;
+
+                        let x = centre.x + moon.distance * angle.cos();
+                        let y = centre.y + moon.distance * angle.sin();
+                        let z = centre.z;
+
+                        bodies_data.bodies[slot] =
+                            [x as f32, y as f32, z as f32, moon.radius as f32];
+                        bodies_data.colours[slot] =
+                            [moon.colour[0], moon.colour[1], moon.colour[2], 0.0];
+                    }
+
                     renderer
                         .draw_frame(
                             // Mesh planets, or none (the ray pass draws them)
@@ -424,6 +511,7 @@ impl App {
             frame: 0,
             last_frame: Instant::now(),
             accumulator: 0.0,
+            sim_time: 0.0,
             renderer: None,
             // Looking at the Sun from 14 units away, slightly from above
             camera: Camera::new(
