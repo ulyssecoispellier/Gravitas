@@ -7,7 +7,7 @@ use std::time::Instant;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
-use winit::keyboard::{Key, NamedKey};
+use winit::keyboard::{Key, ModifiersState, NamedKey};
 use winit::window::{Window, WindowId};
 
 use crate::camera::Camera;
@@ -246,6 +246,8 @@ pub struct App {
     retro: bool,
     /// Draw the old mesh planets on top of the ray-traced ones (M key, for comparison)
     show_meshes: bool,
+    focus: usize,
+    modifiers: ModifiersState,
 }
 
 // winit calls these methods when something happens (the app starts, a key is pressed...)
@@ -277,7 +279,7 @@ impl ApplicationHandler for App {
         match event {
             // The window's red button
             WindowEvent::CloseRequested => event_loop.exit(),
-            // Keys: Escape quits, up/down arrows change the field of view
+            // Keys: Escape quits, ↑/↓ change the field of view, R recentres, then the groups below
             WindowEvent::KeyboardInput { event, .. } => {
                 // Match the key and its state together, as a tuple
                 match (event.logical_key, event.state) {
@@ -294,28 +296,39 @@ impl ApplicationHandler for App {
                     {
                         self.camera.reset()
                     }
-                    // ← / →: slow down / speed up time (×0 to ×10)
-                    (Key::Named(NamedKey::ArrowLeft), ElementState::Pressed) => {
-                        self.sim_speed = (self.sim_speed / 2.0).clamp(0.0, 50.0);
-                    }
-                    (Key::Named(NamedKey::ArrowRight), ElementState::Pressed) => {
-                        self.sim_speed = (self.sim_speed * 2.0).clamp(0.0, 50.0);
-                    }
-                    // C: retro dithering on/off
-                    (Key::Character(key), ElementState::Pressed)
-                        if key.eq_ignore_ascii_case("c") =>
-                    {
-                        self.retro = !self.retro;
-                    }
-                    // M: mesh planets on/off
-                    (Key::Character(key), ElementState::Pressed)
-                        if key.eq_ignore_ascii_case("m") =>
-                    {
-                        self.show_meshes = !self.show_meshes;
-                    }
+                    // Named keys: ← / → halve / double the time speed, Tab / Shift+Tab switch body
+                    (Key::Named(named_key), ElementState::Pressed) => match named_key {
+                        NamedKey::ArrowLeft => {
+                            self.sim_speed = (self.sim_speed / 2.0).clamp(0.0, 50.0)
+                        }
+                        NamedKey::ArrowRight => {
+                            self.sim_speed = (self.sim_speed * 2.0).clamp(0.0, 50.0)
+                        }
+                        // Tab / Shift+Tab: focus the next / previous body, framed at 5× its radius
+                        NamedKey::Tab if self.modifiers.shift_key() => {
+                            self.focus = (self.focus + 15) % 16;
+                            self.camera
+                                .set_distance(5.0 * Self::body_radius(&self.bodies, self.focus));
+                        }
+                        NamedKey::Tab => {
+                            self.focus = (self.focus + 1) % 16;
+                            self.camera
+                                .set_distance(5.0 * Self::body_radius(&self.bodies, self.focus));
+                        }
+                        _ => (),
+                    },
+                    // Letters: C = retro dithering on/off, M = show the mesh planets
+                    (Key::Character(key), ElementState::Pressed) => match key.as_str() {
+                        "c" | "C" => self.retro = !self.retro,
+                        "m" | "M" => self.show_meshes = !self.show_meshes,
+                        _ => (),
+                    },
                     // Any other key (or a key release): do nothing
                     (_, _) => (),
                 }
+            }
+            WindowEvent::ModifiersChanged(modifiers) => {
+                self.modifiers = modifiers.state();
             }
             // Time to draw a frame: advance the physics, then render
             WindowEvent::RedrawRequested => {
@@ -334,6 +347,9 @@ impl ApplicationHandler for App {
                 }
 
                 self.frame += 1;
+
+                self.camera
+                    .set_target(Self::body_pos(&self.bodies, self.sim_time, self.focus));
 
                 if let Some(renderer) = &mut self.renderer {
                     let aspect = renderer.aspect();
@@ -426,18 +442,13 @@ impl ApplicationHandler for App {
                         bodies_data.haze[i] = self.haze[i];
                     }
 
-                    // Moons on rails: position = planet + circle at angle 2π·t/period, in slots 9..15
+                    // Moons on rails, in slots 9..15 (position from body_pos, relative to the camera)
                     for (m, moon) in MOONS.iter().enumerate() {
                         let slot = 1 + BODIES.len() + m;
-                        let centre = self.bodies[moon.parent].pos() - eye;
-                        let angle = TAU * self.sim_time / moon.period;
-
-                        let x = centre.x + moon.distance * angle.cos();
-                        let y = centre.y + moon.distance * angle.sin();
-                        let z = centre.z;
+                        let pos = Self::body_pos(&self.bodies, self.sim_time, slot) - eye;
 
                         bodies_data.bodies[slot] =
-                            [x as f32, y as f32, z as f32, moon.radius as f32];
+                            [pos.x as f32, pos.y as f32, pos.z as f32, moon.radius as f32];
                         bodies_data.colours[slot] =
                             [moon.colour[0], moon.colour[1], moon.colour[2], 1.0];
                         bodies_data.atmospheres[slot] = [
@@ -547,10 +558,10 @@ impl App {
             renderer: None,
             // Looking at the Sun from 14 units away, slightly from above
             camera: Camera::new(
-                DVec3::new(0.0, 0.0, 0.0),
+                DVec3::new(1.0, 0.0, 0.0),
                 -std::f32::consts::FRAC_PI_2,
                 (3.0f32 / 5.0).asin(),
-                14.0,
+                1e-4,
                 45f32.to_radians(),
             ),
             dragging: false,
@@ -559,6 +570,32 @@ impl App {
             sim_speed: 0.01,
             retro: false,
             show_meshes: false,
+            focus: 0,
+            modifiers: ModifiersState::empty(),
+        }
+    }
+
+    /// World position of GPU slot `slot`: 0 = Sun, 1..8 = planets, 9..15 = moons (on rails).
+    /// Takes the fields it needs instead of `&self`, so it can be called while `self.renderer` is borrowed.
+    fn body_pos(bodies: &[Body], sim_time: f64, slot: usize) -> DVec3 {
+        if slot < 1 + BODIES.len() {
+            bodies[slot].pos()
+        } else {
+            let moon = &MOONS[slot - 1 - BODIES.len()];
+            let planet = bodies[moon.parent].pos();
+            let angle = TAU * sim_time / moon.period;
+            let x = planet.x + moon.distance * angle.cos();
+            let y = planet.y + moon.distance * angle.sin();
+            DVec3::new(x, y, planet.z)
+        }
+    }
+
+    /// Real radius of GPU slot `slot` (same numbering as `body_pos`).
+    fn body_radius(bodies: &[Body], slot: usize) -> f64 {
+        if slot < 1 + BODIES.len() {
+            bodies[slot].radius()
+        } else {
+            MOONS[slot - 1 - BODIES.len()].radius
         }
     }
 }

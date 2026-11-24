@@ -96,7 +96,7 @@ float sun_visibility(vec3 point, int skip) {
 vec3 albedo(int index, vec3 point) {
     vec3 normal = normalize(point - all_bodies.bodies[index].xyz);
     float pu = atan(normal.y, normal.x) / (2.0 * PI);
-    float pv = acos(normal.z) / PI;
+    float pv = acos(clamp(normal.z, -1.0, 1.0)) / PI;
     float layer = float(index - 1);
     vec3 tex = texture(planet_texture, vec3(pu, pv, layer)).rgb;
     return mix(all_bodies.colours[index].rgb, tex, all_bodies.colours[index].w);
@@ -263,7 +263,7 @@ void main() {
         gl_FragDepth = 0.0;
 
         float u = atan(dir.y, dir.x) / (2.0 * PI);
-        float v = acos(dir.z) / PI;
+        float v = acos(clamp(dir.z, -1.0, 1.0)) / PI;
         vec3 stars = texture(sky, vec2(u, v)).rgb;
         
         // Miss: the sky. Ray direction → equirectangular UV (Z is up)

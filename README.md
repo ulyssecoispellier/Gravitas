@@ -176,6 +176,7 @@ Physically based light with multiple bounces.
 | 3 | Bounces (moonlight, earthshine, twilight lighting the ground): one diffuse bounce, rays aimed at each body's cone (importance sampling), 8 stratified samples per body: live and nearly clean | ✅ |
 | 4 | Noise: light temporal blend (works live) · full accumulation as a paused "photo mode" | ⬜ |
 | 5 | Atmospheres: rays scatter in the air and pick up its colour (blue sky, orange sunsets, hazy gas giants) — single scattering: Rayleigh (molecules) + Mie (dust, droplets), per-planet β, density, planet shadow, eclipses from other bodies, extinction, phase functions, jitter | ✅ |
+| — | Atmospheres at real scale: real thicknesses (Earth ≈ 100 km); soft twilight edge for a planet's own shadow in its air (Sun's disc + multiple scattering) | ⬜ |
 | 6 | Bloom on top of the HDR image — v1 ✅ (13×13 blur in the post pass), v2: downsampled blur chain for wide halos | 🚧 |
 | 7 | Auto-exposure: the image adapts to dark scenes like an eye or a camera (night sides become visible) | ⬜ |
 

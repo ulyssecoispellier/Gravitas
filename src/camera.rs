@@ -109,4 +109,14 @@ impl Camera {
     pub fn projection(&self, aspect: f32) -> Mat4 {
         glam::camera::rh::proj::vulkan::perspective_infinite_reverse(self.fov, aspect, 1e-7)
     }
+
+    /// Points the camera at `target` (a world position), e.g. the body it follows.
+    pub fn set_target(&mut self, target: DVec3) {
+        self.target = target;
+    }
+
+    /// Sets the distance from the target (AU), e.g. when switching to a body of another size.
+    pub fn set_distance(&mut self, distance: f64) {
+        self.distance = distance;
+    }
 }
