@@ -122,10 +122,7 @@ impl Camera {
         self.distance = distance;
     }
 
-    pub fn target(&self) -> DVec3 {
-        self.target
-    }
-
+    /// Current distance from the target (AU), where a flight starts from.
     pub fn distance(&self) -> f64 {
         self.distance
     }

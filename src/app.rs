@@ -133,13 +133,18 @@ struct MoonData {
 
 /// A camera flight in progress, from where the camera was to a newly focused body
 struct Flight {
-    from_target: DVec3,
+    /// The body we leave: the camera keeps following it while it climbs
+    from_slot: usize,
     from_distance: f64,
     to_slot: usize,
     to_distance: f64,
     /// Highest distance, reached during the cruise: about the length of the trip
     peak: f64,
-    t: f64,
+    /// Real seconds since the flight started
+    elapsed: f64,
+    /// Length of the climb and the descent (s): longer when the zoom has further to go
+    climb: f64,
+    descent: f64,
 }
 
 /// Major moons, written to GPU slots 9..15 every frame. Real distances (AU) and periods (years)
@@ -218,12 +223,10 @@ const MOONS: [MoonData; 7] = [
 
 /// Index of the textured body in `bodies` (Sun = 0, Mercury = 1, Venus = 2, Earth = 3)
 const EARTH: usize = 3;
-const FLIGHT_DURATION: f64 = 3.0;
-
-/// Progress inside one phase of a flight: 0 before `start`, 1 after `end`, linear in between.
-fn phase(t: f64, start: f64, end: f64) -> f64 {
-    ((t - start) / (end - start)).clamp(0.0, 1.0)
-}
+/// Zoom speed during a flight's climb and descent: ×10 every half second, on every trip
+const ZOOM_RATE: f64 = std::f64::consts::LN_10 / 0.5;
+/// How long the cruise (crossing space at the peak) lasts, in real seconds
+const CRUISE: f64 = 1.0;
 
 /// Everything the program keeps between two events.
 ///
@@ -324,14 +327,10 @@ impl ApplicationHandler for App {
                         }
                         // Tab / Shift+Tab: focus the next / previous body, framed at 5× its radius
                         NamedKey::Tab if self.modifiers.shift_key() => {
-                            self.camera.reset();
-                            self.focus = (self.focus + 15) % 16;
-                            self.start_flight();
+                            self.start_flight((self.focus + 15) % 16);
                         }
                         NamedKey::Tab => {
-                            self.camera.reset();
-                            self.focus = (self.focus + 1) % 16;
-                            self.start_flight();
+                            self.start_flight((self.focus + 1) % 16);
                         }
                         _ => (),
                     },
@@ -368,34 +367,30 @@ impl ApplicationHandler for App {
 
                 // Camera: fly towards the newly focused body, or follow it
                 if let Some(flight) = &mut self.flight {
-                    // Progress 0 → 1 over FLIGHT_DURATION real seconds
-                    flight.t = (flight.t + frame_time / FLIGHT_DURATION).min(1.0);
-                    let t = flight.t;
-                    // 3 phases: ① climb (0–30%), ② cruise (30–70%), ③ descent (70–100%)
-                    let u1 = phase(t, 0.0, 0.3);
-                    let u2 = phase(t, 0.3, 0.7);
-                    let u3 = phase(t, 0.7, 1.0);
+                    flight.elapsed += frame_time;
+                    let time = flight.elapsed;
+                    let cruise_end = flight.climb + CRUISE;
 
-                    // Distance: ease-in climb to the peak, stay there, ease-out descent.
-                    // Geometric blends: the zoom changes by the same % every frame, at any scale
-                    let distance = if t < 0.3 {
-                        let a = u1 * u1;
-                        flight.from_distance.powf(1.0 - a) * flight.peak.powf(a)
-                    } else if t < 0.7 {
+                    // Distance: constant-speed zoom out, cruise at the peak, constant-speed zoom in.
+                    // exp(rate × time): the distance changes by the same % every frame
+                    let distance = if time < flight.climb {
+                        flight.from_distance * (ZOOM_RATE * time).exp()
+                    } else if time < cruise_end {
                         flight.peak
                     } else {
-                        let b = 1.0 - (1.0 - u3) * (1.0 - u3);
-                        flight.peak.powf(1.0 - b) * flight.to_distance.powf(b)
+                        flight.peak * (-ZOOM_RATE * (time - cruise_end)).exp()
                     };
-                    self.camera.set_distance(distance);
+                    self.camera.set_distance(distance.max(flight.to_distance));
 
-                    // Target: crosses space during the cruise (smoothstep), towards where the
-                    // destination is now (it keeps moving along its orbit)
-                    let s = u2 * u2 * (3.0 - 2.0 * u2);
+                    // Target: crosses space during the cruise (smoothstep). Both ends are read
+                    // every frame: the bodies keep moving along their orbits during the flight
+                    let u = ((time - flight.climb) / CRUISE).clamp(0.0, 1.0);
+                    let s = u * u * (3.0 - 2.0 * u);
+                    let from_target = Self::body_pos(&self.bodies, self.sim_time, flight.from_slot);
                     let to_target = Self::body_pos(&self.bodies, self.sim_time, flight.to_slot);
-                    self.camera.set_target(flight.from_target.lerp(to_target, s));
+                    self.camera.set_target(from_target.lerp(to_target, s));
 
-                    if flight.t >= 1.0 {
+                    if time >= cruise_end + flight.descent {
                         self.flight = None;
                     }
                 } else {
@@ -643,19 +638,27 @@ impl App {
         }
     }
 
-    /// Starts a camera flight from where the camera is to the body in `self.focus`.
-    fn start_flight(&mut self) {
-        let from_target = self.camera.target();
+    /// Starts a camera flight from the focused body to body `to`, which becomes the focus.
+    fn start_flight(&mut self, to: usize) {
+        self.camera.reset();
+        let from = self.focus;
         let from_distance = self.camera.distance();
-        let to_distance = 5.0 * Self::body_radius(&self.bodies, self.focus);
-        let trip = (Self::body_pos(&self.bodies, self.sim_time, self.focus) - from_target).length();
+        let to_distance = 5.0 * Self::body_radius(&self.bodies, to);
+        let trip = (Self::body_pos(&self.bodies, self.sim_time, to)
+            - Self::body_pos(&self.bodies, self.sim_time, from))
+        .length();
+        let peak = trip.max(from_distance).max(to_distance);
+        self.focus = to;
         self.flight = Some(Flight {
-            from_target,
+            from_slot: from,
             from_distance,
-            to_slot: self.focus,
+            to_slot: to,
             to_distance,
-            peak: trip.max(from_distance).max(to_distance),
-            t: 0.0,
+            peak,
+            elapsed: 0.0,
+            // Time to zoom by a factor k at a constant rate: ln(k) / rate
+            climb: (peak / from_distance).ln() / ZOOM_RATE,
+            descent: (peak / to_distance).ln() / ZOOM_RATE,
         });
     }
 
