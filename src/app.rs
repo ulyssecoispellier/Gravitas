@@ -135,8 +135,11 @@ struct MoonData {
 struct Flight {
     /// The body we leave: the camera keeps following it while it climbs
     from_slot: usize,
+    /// Camera distance when the flight started (AU)
     from_distance: f64,
+    /// The body we fly to (GPU slot numbering)
     to_slot: usize,
+    /// Camera distance on arrival: 5× the destination's radius (AU)
     to_distance: f64,
     /// Highest distance, reached during the cruise: about the length of the trip
     peak: f64,
@@ -257,6 +260,7 @@ pub struct App {
     camera: Camera,
     /// Is the left mouse button held down?
     dragging: bool,
+    /// Right mouse button held: dragging pans the view
     panning: bool,
     /// Mouse position at the previous `CursorMoved` event
     last_cursor: (f64, f64),
@@ -266,9 +270,16 @@ pub struct App {
     retro: bool,
     /// Draw the old mesh planets on top of the ray-traced ones (M key, for comparison)
     show_meshes: bool,
+    /// The body the camera follows (GPU slot: 0 = Sun, 1..8 = planets, 9..15 = moons)
     focus: usize,
+    /// Shift / Ctrl / Alt / Cmd currently held (for Shift+Tab)
     modifiers: ModifiersState,
+    /// The camera flight in progress, if any (None = just following `focus`)
     flight: Option<Flight>,
+    /*/// egui's state: runs the UI description each frame and remembers what is open
+    egui_ctx: egui::Context,
+    /// Turns winit events into egui input. None until the window exists (see `resumed`)
+    egui_state: Option<egui_winit::State>,*/
 }
 
 // winit calls these methods when something happens (the app starts, a key is pressed...)
@@ -378,9 +389,10 @@ impl ApplicationHandler for App {
                     } else if time < cruise_end {
                         flight.peak
                     } else {
-                        flight.peak * (-ZOOM_RATE * (time - cruise_end)).exp()
+                        // max: the last frame must not overshoot inside the destination
+                        (flight.peak * (-ZOOM_RATE * (time - cruise_end)).exp()).max(flight.to_distance)
                     };
-                    self.camera.set_distance(distance.max(flight.to_distance));
+                    self.camera.set_distance(distance);
 
                     // Target: crosses space during the cruise (smoothstep). Both ends are read
                     // every frame: the bodies keep moving along their orbits during the flight

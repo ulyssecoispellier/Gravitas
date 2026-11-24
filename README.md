@@ -205,14 +205,28 @@ Physically based light with multiple bounces.
 | Rotate the sky from galactic to ecliptic coordinates (real Milky Way orientation) | ⬜ |
 | Soft shadows: the Sun as a disc (umbra cone, penumbra, annular eclipses), on surfaces and in atmospheres | ✅ |
 
-### 🔭 Real scale & navigation (later)
+### 🔭 Real scale & navigation
 | | Status |
 |---|---|
-| Real sizes and distances for every body (no more exaggeration): moons can then stay inside their planet's Hill sphere and orbit with real gravity | ⬜ |
-| Precision at real scale: camera-relative positions (f64 on the CPU, small f32 offsets on the GPU) + a depth setup that handles huge distance ranges | ⬜ |
-| Collapsible side panel listing every body (planets + moons); click one to focus it | ⬜ |
-| Smooth camera flight to the selected body (eased animation of target + distance) | ⬜ |
+| Real sizes and distances for every body, in AU / years / Sun masses (G = 4π²) | ✅ |
+| Moons with real gravity instead of rails (now possible: they sit inside their planet's Hill sphere) | ⬜ |
+| Precision at real scale: camera-relative positions (f64 on the CPU, small f32 offsets on the GPU) + reversed infinite depth | ✅ |
+| Focus a body: the camera follows it (Tab / Shift+Tab), pan offset kept around it | ✅ |
+| Collapsible *Celestial Bodies* panel (egui) listing every planet and its satellites; click one to fly there | 🚧 |
+| Camera flight between bodies: constant-speed zoom out, cruise, constant-speed zoom in, following both moving bodies | ✅ |
 | Time speed that adapts to the focused body, so fast moons stay watchable | ⬜ |
+
+### ⚡ Performance (real scale: planets often fill the screen)
+Measured: ~70 ms per frame (≈14 fps) with Earth filling the view, on a Retina screen (~3.6 million pixels).
+
+| | Gain | Status |
+|---|---|---|
+| Measure first: toggle bloom / atmospheres / sample counts to see where the GPU time goes | — | ⬜ |
+| Separable bloom: blur horizontally, then vertically (26 reads per pixel instead of 169), with one extra image and pass | ~6× on bloom | ⬜ |
+| Atmosphere transmittance LUT: precompute the air towards the Sun (height × Sun angle) in a small 2D texture, instead of an 8-step march per sample (Bruneton / Hillaire) | ~5–8× on atmospheres | ⬜ |
+| Eclipse culling: the CPU lists, for each body, the few bodies that can shadow it (usually 0 or 1), instead of 16 bodies with asin/acos per pixel and per atmosphere sample | big on every lit pixel | ⬜ |
+| Render scale: draw the 3D scene at half the Retina resolution, upscale in the post pass (optional toggle) | ~4× on the scene | ⬜ |
+| Bloom v2: blur a downsized copy (wide halos, even cheaper) | | ⬜ |
 
 ### 💻 Cross-platform (Windows · Linux · macOS)
 | | Status |
