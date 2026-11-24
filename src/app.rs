@@ -131,6 +131,17 @@ struct MoonData {
     haze: [f32; 4],
 }
 
+/// A camera flight in progress, from where the camera was to a newly focused body
+struct Flight {
+    from_target: DVec3,
+    from_distance: f64,
+    to_slot: usize,
+    to_distance: f64,
+    /// Highest distance, reached during the cruise: about the length of the trip
+    peak: f64,
+    t: f64,
+}
+
 /// Major moons, written to GPU slots 9..15 every frame. Real distances (AU) and periods (years)
 const MOONS: [MoonData; 7] = [
     // Moon (Earth)
@@ -207,6 +218,12 @@ const MOONS: [MoonData; 7] = [
 
 /// Index of the textured body in `bodies` (Sun = 0, Mercury = 1, Venus = 2, Earth = 3)
 const EARTH: usize = 3;
+const FLIGHT_DURATION: f64 = 3.0;
+
+/// Progress inside one phase of a flight: 0 before `start`, 1 after `end`, linear in between.
+fn phase(t: f64, start: f64, end: f64) -> f64 {
+    ((t - start) / (end - start)).clamp(0.0, 1.0)
+}
 
 /// Everything the program keeps between two events.
 ///
@@ -248,6 +265,7 @@ pub struct App {
     show_meshes: bool,
     focus: usize,
     modifiers: ModifiersState,
+    flight: Option<Flight>,
 }
 
 // winit calls these methods when something happens (the app starts, a key is pressed...)
@@ -308,14 +326,12 @@ impl ApplicationHandler for App {
                         NamedKey::Tab if self.modifiers.shift_key() => {
                             self.camera.reset();
                             self.focus = (self.focus + 15) % 16;
-                            self.camera
-                                .set_distance(5.0 * Self::body_radius(&self.bodies, self.focus));
+                            self.start_flight();
                         }
                         NamedKey::Tab => {
                             self.camera.reset();
                             self.focus = (self.focus + 1) % 16;
-                            self.camera
-                                .set_distance(5.0 * Self::body_radius(&self.bodies, self.focus));
+                            self.start_flight();
                         }
                         _ => (),
                     },
@@ -350,8 +366,42 @@ impl ApplicationHandler for App {
 
                 self.frame += 1;
 
-                self.camera
-                    .set_target(Self::body_pos(&self.bodies, self.sim_time, self.focus));
+                // Camera: fly towards the newly focused body, or follow it
+                if let Some(flight) = &mut self.flight {
+                    // Progress 0 → 1 over FLIGHT_DURATION real seconds
+                    flight.t = (flight.t + frame_time / FLIGHT_DURATION).min(1.0);
+                    let t = flight.t;
+                    // 3 phases: ① climb (0–30%), ② cruise (30–70%), ③ descent (70–100%)
+                    let u1 = phase(t, 0.0, 0.3);
+                    let u2 = phase(t, 0.3, 0.7);
+                    let u3 = phase(t, 0.7, 1.0);
+
+                    // Distance: ease-in climb to the peak, stay there, ease-out descent.
+                    // Geometric blends: the zoom changes by the same % every frame, at any scale
+                    let distance = if t < 0.3 {
+                        let a = u1 * u1;
+                        flight.from_distance.powf(1.0 - a) * flight.peak.powf(a)
+                    } else if t < 0.7 {
+                        flight.peak
+                    } else {
+                        let b = 1.0 - (1.0 - u3) * (1.0 - u3);
+                        flight.peak.powf(1.0 - b) * flight.to_distance.powf(b)
+                    };
+                    self.camera.set_distance(distance);
+
+                    // Target: crosses space during the cruise (smoothstep), towards where the
+                    // destination is now (it keeps moving along its orbit)
+                    let s = u2 * u2 * (3.0 - 2.0 * u2);
+                    let to_target = Self::body_pos(&self.bodies, self.sim_time, flight.to_slot);
+                    self.camera.set_target(flight.from_target.lerp(to_target, s));
+
+                    if flight.t >= 1.0 {
+                        self.flight = None;
+                    }
+                } else {
+                    self.camera
+                        .set_target(Self::body_pos(&self.bodies, self.sim_time, self.focus));
+                }
 
                 if let Some(renderer) = &mut self.renderer {
                     let aspect = renderer.aspect();
@@ -574,6 +624,7 @@ impl App {
             show_meshes: false,
             focus: 3,
             modifiers: ModifiersState::empty(),
+            flight: None,
         }
     }
 
@@ -590,6 +641,22 @@ impl App {
             let y = planet.y + moon.distance * angle.sin();
             DVec3::new(x, y, planet.z)
         }
+    }
+
+    /// Starts a camera flight from where the camera is to the body in `self.focus`.
+    fn start_flight(&mut self) {
+        let from_target = self.camera.target();
+        let from_distance = self.camera.distance();
+        let to_distance = 5.0 * Self::body_radius(&self.bodies, self.focus);
+        let trip = (Self::body_pos(&self.bodies, self.sim_time, self.focus) - from_target).length();
+        self.flight = Some(Flight {
+            from_target,
+            from_distance,
+            to_slot: self.focus,
+            to_distance,
+            peak: trip.max(from_distance).max(to_distance),
+            t: 0.0,
+        });
     }
 
     /// Real radius of GPU slot `slot` (same numbering as `body_pos`).

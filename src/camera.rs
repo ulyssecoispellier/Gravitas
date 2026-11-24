@@ -121,4 +121,12 @@ impl Camera {
     pub fn set_distance(&mut self, distance: f64) {
         self.distance = distance;
     }
+
+    pub fn target(&self) -> DVec3 {
+        self.target
+    }
+
+    pub fn distance(&self) -> f64 {
+        self.distance
+    }
 }
