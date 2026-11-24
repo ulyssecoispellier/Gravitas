@@ -315,7 +315,8 @@ void main() {
 
             // Light march: optical depth from p to the top of the atmosphere, towards the Sun
             vec2 light = ray_sphere_both(p, sun_dir, body.xyz, R * atmo.w);
-            float l_ds = light.y / LIGHT_STEPS;
+            // max: at the very top of a thin atmosphere, rounding can report a miss (-1): no air left to cross
+            float l_ds = max(light.y, 0.0) / LIGHT_STEPS;
             float light_depth = 0.0;
             
             for (int l = 0; l < LIGHT_STEPS; l++) {

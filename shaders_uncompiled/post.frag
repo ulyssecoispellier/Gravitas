@@ -37,6 +37,8 @@ vec3 tone_map(vec3 x) {
 vec3 bright(vec3 c) {
     // A NaN or infinite pixel would spread over the whole bloom square: treat it as black
     if (any(isnan(c)) || any(isinf(c))) { return vec3(0.0); }
+    // Firefly cap: a rare broken sample can't light up a whole bloom square (no real pixel is this bright)
+    c = min(c, vec3(100.0));
     return max(c - BLOOM_THRESHOLD, 0.0);
 }
 
