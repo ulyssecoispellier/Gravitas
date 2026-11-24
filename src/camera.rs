@@ -16,6 +16,7 @@ pub struct Camera {
     distance: f64,
     /// Vertical field of view of the lens, in radians
     fov: f32,
+    pan_offset: DVec3,
 }
 
 impl Camera {
@@ -27,6 +28,7 @@ impl Camera {
             pitch,
             distance,
             fov,
+            pan_offset: DVec3::ZERO,
         }
     }
 
@@ -95,12 +97,12 @@ impl Camera {
         let right = DVec3::Z.cross(back).normalize();
         let up = back.cross(right);
 
-        self.target += (-right * dx + up * dy) * 0.0015 * self.distance;
+        self.pan_offset += (-right * dx + up * dy) * 0.0015 * self.distance;
     }
 
     /// Puts the target back on the Sun.
     pub fn reset(&mut self) {
-        self.target = DVec3::ZERO;
+        self.pan_offset = DVec3::ZERO;
     }
 
     /// The projection matrix: the camera's lens (perspective, so far things look smaller).
@@ -112,7 +114,7 @@ impl Camera {
 
     /// Points the camera at `target` (a world position), e.g. the body it follows.
     pub fn set_target(&mut self, target: DVec3) {
-        self.target = target;
+        self.target = target + self.pan_offset;
     }
 
     /// Sets the distance from the target (AU), e.g. when switching to a body of another size.

@@ -306,11 +306,13 @@ impl ApplicationHandler for App {
                         }
                         // Tab / Shift+Tab: focus the next / previous body, framed at 5× its radius
                         NamedKey::Tab if self.modifiers.shift_key() => {
+                            self.camera.reset();
                             self.focus = (self.focus + 15) % 16;
                             self.camera
                                 .set_distance(5.0 * Self::body_radius(&self.bodies, self.focus));
                         }
                         NamedKey::Tab => {
+                            self.camera.reset();
                             self.focus = (self.focus + 1) % 16;
                             self.camera
                                 .set_distance(5.0 * Self::body_radius(&self.bodies, self.focus));
@@ -570,7 +572,7 @@ impl App {
             sim_speed: 0.01,
             retro: false,
             show_meshes: false,
-            focus: 0,
+            focus: 3,
             modifiers: ModifiersState::empty(),
         }
     }
