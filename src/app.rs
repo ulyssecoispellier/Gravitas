@@ -252,6 +252,10 @@ pub struct App {
     frame: u64,
     /// When the previous frame started, to measure how much time passed
     last_frame: Instant,
+    /// Frames drawn since the window title last showed the FPS
+    fps_frames: u32,
+    /// Real seconds since the window title last showed the FPS
+    fps_timer: f64,
     /// Real time not simulated yet (see the fixed timestep loop)
     accumulator: f64,
     /// Simulated time since start, in sim seconds (drives the moons)
@@ -376,6 +380,20 @@ impl ApplicationHandler for App {
 
                 self.frame += 1;
 
+                // FPS counter: average over ~1 s, shown in the window title (fps + ms per frame)
+                self.fps_frames += 1;
+                self.fps_timer += frame_time;
+
+                if self.fps_timer >= 1.0 {
+                    let fps = self.fps_frames as f64 / self.fps_timer;
+                    if let Some(window) = &self.window {
+                        window
+                            .set_title(&format!("Gravitas: {fps:.0} fps ({:.1} ms)", 1000.0 / fps));
+                    }
+                    self.fps_frames = 0;
+                    self.fps_timer = 0.0;
+                }
+
                 // Camera: fly towards the newly focused body, or follow it
                 if let Some(flight) = &mut self.flight {
                     flight.elapsed += frame_time;
@@ -390,7 +408,8 @@ impl ApplicationHandler for App {
                         flight.peak
                     } else {
                         // max: the last frame must not overshoot inside the destination
-                        (flight.peak * (-ZOOM_RATE * (time - cruise_end)).exp()).max(flight.to_distance)
+                        (flight.peak * (-ZOOM_RATE * (time - cruise_end)).exp())
+                            .max(flight.to_distance)
                     };
                     self.camera.set_distance(distance);
 
@@ -612,6 +631,8 @@ impl App {
                 .collect(),
             frame: 0,
             last_frame: Instant::now(),
+            fps_frames: 0,
+            fps_timer: 0.0,
             accumulator: 0.0,
             sim_time: 0.0,
             renderer: None,

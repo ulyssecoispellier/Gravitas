@@ -2,3 +2,5 @@ target/
 shaders/
 # Textures are big downloads (see README): never in git
 textures/
+# Exercise sheets + solutions (local study material)
+exercises/

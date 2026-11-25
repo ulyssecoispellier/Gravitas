@@ -171,6 +171,16 @@ pub struct Renderer {
     scene_memory: vk::DeviceMemory,
     /// How shaders see `scene_image`
     scene_view: vk::ImageView,
+    /// Bright light of the scene blurred along x (bloom pass 1), read by the post pass
+    bloom_image: vk::Image,
+    /// The memory behind `bloom_image`
+    bloom_memory: vk::DeviceMemory,
+    /// How shaders see `bloom_image`
+    bloom_view: vk::ImageView,
+    /// Layout of the bloom pass
+    bloom_pipeline_layout: vk::PipelineLayout,
+    /// Bloom pass: reads `scene_image`, writes `bloom_image`
+    bloom_pipeline: vk::Pipeline,
     /// Layout of the post-processing pass
     post_pipeline_layout: vk::PipelineLayout,
     /// Post-processing pass: reads `scene_image`, writes the swapchain image
@@ -238,6 +248,18 @@ impl Renderer {
 
         // Offscreen image: the scene is drawn here, then read by the post pass
         let (scene_image, scene_memory, scene_view) = create_image(
+            &instance,
+            &device,
+            physical_device,
+            swapchain.extent,
+            HDR_FORMAT,
+            vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
+            vk::ImageAspectFlags::COLOR,
+            1,
+        )?;
+
+        // Offscreen image for bloom pass 1 (same size and format as the scene image)
+        let (bloom_image, bloom_memory, bloom_view) = create_image(
             &instance,
             &device,
             physical_device,
@@ -332,6 +354,19 @@ impl Renderer {
             swapchain.format,
             ray_vert_module,
             post_frag_module,
+            descriptor_set_layout,
+            false,
+            false,
+        )?;
+
+        // Bloom pass: same full-screen vertex shader, draws into the HDR bloom image
+        let bloom_frag_module =
+            create_shader_module(&device, include_bytes!("../shaders/bloom.frag.spv"))?;
+        let (bloom_pipeline_layout, bloom_pipeline) = create_pipeline(
+            &device,
+            HDR_FORMAT,
+            ray_vert_module,
+            bloom_frag_module,
             descriptor_set_layout,
             false,
             false,
@@ -470,6 +505,7 @@ impl Renderer {
             )?
         }[0];
         write_image_descriptor(&device, post_descriptor_set, 0, post_sampler, scene_view);
+        write_image_descriptor(&device, post_descriptor_set, 2, post_sampler, bloom_view);
 
         // 8. A unit sphere (radius 1), uploaded to the GPU. Drawn once per body, scaled to its radius
         let (sphere_vertices, sphere_indices) = uv_sphere(128, 64, 1.0, [0.0, 0.0, 0.0]);
@@ -497,6 +533,7 @@ impl Renderer {
             ray_vert_module,
             ray_frag_module,
             post_frag_module,
+            bloom_frag_module,
         ] {
             unsafe {
                 device.destroy_shader_module(module, None);
@@ -532,6 +569,11 @@ impl Renderer {
             scene_image,
             scene_memory,
             scene_view,
+            bloom_image,
+            bloom_memory,
+            bloom_pipeline,
+            bloom_pipeline_layout,
+            bloom_view,
             post_pipeline_layout,
             post_pipeline,
             post_descriptor_set,
@@ -669,6 +711,15 @@ impl Renderer {
                 .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
                 .image(self.scene_image)
                 .subresource_range(range);
+            let bloom_to_draw = vk::ImageMemoryBarrier::builder()
+                .old_layout(vk::ImageLayout::UNDEFINED)
+                .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                .src_access_mask(vk::AccessFlags::empty())
+                .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .image(self.bloom_image)
+                .subresource_range(range);
 
             self.device.cmd_pipeline_barrier(
                 self.command_buffer,
@@ -677,7 +728,7 @@ impl Renderer {
                 vk::DependencyFlags::empty(),
                 &[] as &[vk::MemoryBarrier],
                 &[] as &[vk::BufferMemoryBarrier],
-                &[to_draw, scene_to_draw],
+                &[to_draw, scene_to_draw, bloom_to_draw],
             );
 
             // Same for the depth image: make it ready for depth testing
@@ -837,6 +888,57 @@ impl Renderer {
                 &[scene_to_read],
             );
 
+            // Bloom pass 1: bright light of the scene blurred along x, drawn into bloom_image
+            let bloom_attachment = vk::RenderingAttachmentInfo::builder()
+                .image_view(self.bloom_view)
+                .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                .load_op(vk::AttachmentLoadOp::DONT_CARE)
+                .store_op(vk::AttachmentStoreOp::STORE);
+            let bloom_attachments = &[bloom_attachment];
+            let bloom_rendering = vk::RenderingInfo::builder()
+                .render_area(vk::Rect2D::builder().extent(self.swapchain.extent))
+                .layer_count(1)
+                .color_attachments(bloom_attachments);
+            self.device
+                .cmd_begin_rendering(self.command_buffer, &bloom_rendering);
+            self.device.cmd_bind_pipeline(
+                self.command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.bloom_pipeline,
+            );
+            // Set 0 = the scene image (binding 0), read by bloom.frag
+            self.device.cmd_bind_descriptor_sets(
+                self.command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.bloom_pipeline_layout,
+                0,
+                &[self.post_descriptor_set],
+                &[],
+            );
+            // One full-screen triangle, no push constants
+            self.device.cmd_draw(self.command_buffer, 3, 1, 0, 0);
+            self.device.cmd_end_rendering(self.command_buffer);
+
+            // Barrier: the bloom image goes from "being drawn" to "being read by the post shader"
+            let bloom_to_read = vk::ImageMemoryBarrier::builder()
+                .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+                .dst_access_mask(vk::AccessFlags::SHADER_READ)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .image(self.bloom_image)
+                .subresource_range(range);
+            self.device.cmd_pipeline_barrier(
+                self.command_buffer,
+                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT, // wait for the bloom to be written...
+                vk::PipelineStageFlags::FRAGMENT_SHADER, // ...before the post shader reads it
+                vk::DependencyFlags::empty(),
+                &[] as &[vk::MemoryBarrier],
+                &[] as &[vk::BufferMemoryBarrier],
+                &[bloom_to_read],
+            );
+
             // Post pass: draws into the swapchain image (every pixel is overwritten: no clear, no depth)
             let post_attachment = vk::RenderingAttachmentInfo::builder()
                 .image_view(self.swapchain.image_views[i])
@@ -924,6 +1026,9 @@ impl Renderer {
             self.device.destroy_image_view(self.scene_view, None);
             self.device.destroy_image(self.scene_image, None);
             self.device.free_memory(self.scene_memory, None);
+            self.device.destroy_image_view(self.bloom_view, None);
+            self.device.destroy_image(self.bloom_image, None);
+            self.device.free_memory(self.bloom_memory, None);
             // The swapchain last: it owns its images
             self.device
                 .destroy_swapchain_khr(self.swapchain.handle, None);
@@ -977,6 +1082,25 @@ impl Renderer {
                 self.post_sampler,
                 self.scene_view,
             );
+
+            // New bloom image (same size as the scene), and point the post pass's binding 2 at it
+            (self.bloom_image, self.bloom_memory, self.bloom_view) = create_image(
+                &self.instance,
+                &self.device,
+                self.physical_device,
+                self.swapchain.extent,
+                HDR_FORMAT,
+                vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
+                vk::ImageAspectFlags::COLOR,
+                1,
+            )?;
+            write_image_descriptor(
+                &self.device,
+                self.post_descriptor_set,
+                2,
+                self.post_sampler,
+                self.bloom_view,
+            );
         }
 
         Ok(())
@@ -1024,6 +1148,9 @@ impl Drop for Renderer {
             self.device.destroy_pipeline(self.ray_pipeline, None);
             self.device
                 .destroy_pipeline_layout(self.ray_pipeline_layout, None);
+            self.device.destroy_pipeline(self.bloom_pipeline, None);
+            self.device
+                .destroy_pipeline_layout(self.bloom_pipeline_layout, None);
             self.device.destroy_pipeline(self.post_pipeline, None);
             self.device
                 .destroy_pipeline_layout(self.post_pipeline_layout, None);

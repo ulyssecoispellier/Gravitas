@@ -7,6 +7,8 @@ layout(location = 0) out vec4 out_color;
 
 // The scene image (set 0, binding 0)
 layout(set = 0, binding = 0) uniform sampler2D scene;
+// The bright light already blurred along x by bloom.frag (set 0, binding 2)
+layout(set = 0, binding = 2) uniform sampler2D bloom_h;
 
 // Same layout as `PostPushConstants` in renderer.rs
 layout(push_constant) uniform Push {
@@ -24,9 +26,11 @@ const float BAYER[16] = float[](
 const float PIXEL_SIZE = 3.0;
 // Colour levels per channel (2 = 8 colours in total)
 const float LEVELS = 2.0;
-const float BLOOM_THRESHOLD = 1.0;
+// How much of the glow is added on top of the scene
 const float BLOOM_STRENGTH = 0.6;
+// Samples on each side of the pixel: the loop reads 2 * RADIUS + 1 = 13 pixels
 const int BLOOM_RADIUS = 6;
+// Screen pixels between two samples (wider glow for the same number of reads)
 const float BLOOM_SPACING = 4.0;
 
 // ACES tone mapping: squeezes any brightness (0..∞) into 0..1, like a film camera
@@ -34,28 +38,21 @@ vec3 tone_map(vec3 x) {
     return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
 }
 
-vec3 bright(vec3 c) {
-    // A NaN or infinite pixel would spread over the whole bloom square: treat it as black
-    if (any(isnan(c)) || any(isinf(c))) { return vec3(0.0); }
-    // Firefly cap: a rare broken sample can't light up a whole bloom square (no real pixel is this bright)
-    c = min(c, vec3(100.0));
-    return max(c - BLOOM_THRESHOLD, 0.0);
-}
-
+// Bloom pass 2: blurs bloom_h along y, which finishes the 2D Gaussian glow
 vec3 bloom(vec2 uv) {
     vec3 total_light = vec3(0.0);
     float total_weight = 0.0;
     vec2 texel = 1.0 / vec2(textureSize(scene, 0));
 
-    for (int x = -BLOOM_RADIUS; x <= BLOOM_RADIUS; x++) {
-        for (int y = -BLOOM_RADIUS; y <= BLOOM_RADIUS; y++) {
-            vec2 offset = vec2(x, y) * BLOOM_SPACING * texel;
-            vec3 neighbour = bright( texture( scene, clamp(uv + offset, 0.0, 1.0) ).rgb );
-            float weight = exp(-(float(x) * float(x) + float(y) * float(y)) / (float(BLOOM_RADIUS) * float(BLOOM_RADIUS) / 2.0));
+    for (int y = -BLOOM_RADIUS; y <= BLOOM_RADIUS; y++) {
+        vec2 offset = vec2(0.0, y) * BLOOM_SPACING * texel;
+        vec3 neighbour = texture( bloom_h, clamp(uv + offset, 0.0, 1.0) ).rgb;
+        // Gaussian denominator 2*sigma^2, with sigma = BLOOM_RADIUS / 2
+        float half_bloom_rad_squared = float(BLOOM_RADIUS) * float(BLOOM_RADIUS) / 2.0;
+        float weight = exp(-(float(y) * float(y)) / half_bloom_rad_squared);
 
-            total_light += neighbour * weight;
-            total_weight += weight;
-        }
+        total_light += neighbour * weight;
+        total_weight += weight;
     }
     return total_light / total_weight;
 }
