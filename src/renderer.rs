@@ -97,7 +97,7 @@ pub struct RayPushConstants {
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct PostPushConstants {
-    /// x = retro dithering on (1.0) / off (0.0), y z w = unused
+    /// x = retro dithering on (1.0) / off (0.0), y = render scale of the 3D scene, z w = unused
     pub settings: [f32; 4],
 }
 
@@ -603,6 +603,8 @@ impl Renderer {
         pushes: &[PushConstants],
         ray_push: &RayPushConstants,
         retro: bool,
+        // Render scale of the 3D scene: 1.0 = full resolution, 0.5 = half (H key)
+        res_multiplier: f32,
         bodies: &BodiesUniform,
     ) -> Result<()> {
         unsafe {
@@ -635,7 +637,7 @@ impl Renderer {
             // 3. Record this frame's commands
             self.device
                 .reset_command_buffer(self.command_buffer, vk::CommandBufferResetFlags::empty())?;
-            self.record_commands(index, pushes, ray_push, retro)?;
+            self.record_commands(index, pushes, ray_push, retro, res_multiplier)?;
 
             // 4. Submit: wait for the image before writing colours,
             // signal `render_finished` when done, then signal the fence
@@ -678,6 +680,8 @@ impl Renderer {
         pushes: &[PushConstants],
         ray_push: &RayPushConstants,
         retro: bool,
+        // Render scale of the 3D scene: 1.0 = full resolution, 0.5 = half (H key)
+        res_multiplier: f32,
     ) -> Result<()> {
         unsafe {
             self.device.begin_command_buffer(
@@ -790,9 +794,15 @@ impl Renderer {
                 .store_op(vk::AttachmentStoreOp::DONT_CARE)
                 .clear_value(depth_clear);
 
+            // Size of the 3D scene in pixels: the full screen times the render scale
+            let scaled = vk::Extent2D {
+                width: (self.swapchain.extent.width as f32 * res_multiplier) as u32,
+                height: (self.swapchain.extent.height as f32 * res_multiplier) as u32,
+            };
+
             // Dynamic rendering: the images we draw into this time
             let rendering = vk::RenderingInfo::builder()
-                .render_area(vk::Rect2D::builder().extent(self.swapchain.extent))
+                .render_area(vk::Rect2D::builder().extent(scaled))
                 .layer_count(1)
                 .color_attachments(attachments)
                 .depth_attachment(&depth_attachment);
@@ -825,14 +835,14 @@ impl Renderer {
                 self.command_buffer,
                 0,
                 &[vk::Viewport::builder()
-                    .width(self.swapchain.extent.width as f32)
-                    .height(self.swapchain.extent.height as f32)
+                    .width(scaled.width as f32)
+                    .height(scaled.height as f32)
                     .max_depth(1.0)],
             );
             self.device.cmd_set_scissor(
                 self.command_buffer,
                 0,
-                &[vk::Rect2D::builder().extent(self.swapchain.extent)],
+                &[vk::Rect2D::builder().extent(scaled)],
             );
             // Ray-tracing pass: one full-screen triangle (3 vertices, no buffer)
             self.device.cmd_bind_pipeline(
@@ -888,6 +898,11 @@ impl Renderer {
                 &[scene_to_read],
             );
 
+            // Settings for bloom.frag and post.frag: x = retro on/off, y = render scale
+            let post_push = PostPushConstants {
+                settings: [if retro { 1.0 } else { 0.0 }, res_multiplier, 0.0, 0.0],
+            };
+
             // Bloom pass 1: bright light of the scene blurred along x, drawn into bloom_image
             let bloom_attachment = vk::RenderingAttachmentInfo::builder()
                 .image_view(self.bloom_view)
@@ -896,7 +911,7 @@ impl Renderer {
                 .store_op(vk::AttachmentStoreOp::STORE);
             let bloom_attachments = &[bloom_attachment];
             let bloom_rendering = vk::RenderingInfo::builder()
-                .render_area(vk::Rect2D::builder().extent(self.swapchain.extent))
+                .render_area(vk::Rect2D::builder().extent(scaled))
                 .layer_count(1)
                 .color_attachments(bloom_attachments);
             self.device
@@ -915,7 +930,15 @@ impl Renderer {
                 &[self.post_descriptor_set],
                 &[],
             );
-            // One full-screen triangle, no push constants
+            // bloom.frag needs the render scale (settings.y) to stay inside the drawn corner
+            self.device.cmd_push_constants(
+                self.command_buffer,
+                self.bloom_pipeline_layout,
+                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+                0,
+                bytemuck::bytes_of(&post_push),
+            );
+            // One full-screen triangle
             self.device.cmd_draw(self.command_buffer, 3, 1, 0, 0);
             self.device.cmd_end_rendering(self.command_buffer);
 
@@ -937,6 +960,21 @@ impl Renderer {
                 &[] as &[vk::MemoryBarrier],
                 &[] as &[vk::BufferMemoryBarrier],
                 &[bloom_to_read],
+            );
+
+            // Back to the full screen for the post pass
+            self.device.cmd_set_viewport(
+                self.command_buffer,
+                0,
+                &[vk::Viewport::builder()
+                    .width(self.swapchain.extent.width as f32)
+                    .height(self.swapchain.extent.height as f32)
+                    .max_depth(1.0)],
+            );
+            self.device.cmd_set_scissor(
+                self.command_buffer,
+                0,
+                &[vk::Rect2D::builder().extent(self.swapchain.extent)],
             );
 
             // Post pass: draws into the swapchain image (every pixel is overwritten: no clear, no depth)
@@ -967,9 +1005,6 @@ impl Renderer {
                 &[self.post_descriptor_set],
                 &[],
             );
-            let post_push = PostPushConstants {
-                settings: [if retro { 1.0 } else { 0.0 }, 0.0, 0.0, 0.0],
-            };
             self.device.cmd_push_constants(
                 self.command_buffer,
                 self.post_pipeline_layout,

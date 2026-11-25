@@ -272,6 +272,8 @@ pub struct App {
     sim_speed: f64,
     /// Retro dithering post-effect on/off (C key)
     retro: bool,
+    /// Draw the 3D scene at half resolution, stretched to the screen by the post pass (H key, for fps)
+    half_res: bool,
     /// Draw the old mesh planets on top of the ray-traced ones (M key, for comparison)
     show_meshes: bool,
     /// The body the camera follows (GPU slot: 0 = Sun, 1..8 = planets, 9..15 = moons)
@@ -349,10 +351,11 @@ impl ApplicationHandler for App {
                         }
                         _ => (),
                     },
-                    // Letters: C = retro dithering on/off, M = show the mesh planets
+                    // Letters: C = retro dithering on/off, M = show the mesh planets, H = half resolution on/off
                     (Key::Character(key), ElementState::Pressed) => match key.as_str() {
                         "c" | "C" => self.retro = !self.retro,
                         "m" | "M" => self.show_meshes = !self.show_meshes,
+                        "h" | "H" => self.half_res = !self.half_res,
                         _ => (),
                     },
                     // Any other key (or a key release): do nothing
@@ -545,6 +548,7 @@ impl ApplicationHandler for App {
                             if self.show_meshes { &pushes } else { &[] },
                             &ray_push,
                             self.retro,
+                            if self.half_res { 0.75 } else { 1.0 },
                             &bodies_data,
                         )
                         .unwrap();
@@ -649,6 +653,7 @@ impl App {
             last_cursor: (0.0, 0.0),
             sim_speed: 0.01,
             retro: false,
+            half_res: false,
             show_meshes: false,
             focus: 3,
             modifiers: ModifiersState::empty(),

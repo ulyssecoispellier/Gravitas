@@ -12,7 +12,7 @@ layout(set = 0, binding = 2) uniform sampler2D bloom_h;
 
 // Same layout as `PostPushConstants` in renderer.rs
 layout(push_constant) uniform Push {
-    vec4 settings; // x = retro dithering on (1) / off (0)
+    vec4 settings; // x = retro dithering on (1) / off (0), y = render scale (1.0 full, 0.75 with H)
 } push;
 
 // 4×4 Bayer matrix: thresholds 0..15, ordered so neighbouring pixels get very different values
@@ -46,7 +46,7 @@ vec3 bloom(vec2 uv) {
 
     for (int y = -BLOOM_RADIUS; y <= BLOOM_RADIUS; y++) {
         vec2 offset = vec2(0.0, y) * BLOOM_SPACING * texel;
-        vec3 neighbour = texture( bloom_h, clamp(uv + offset, 0.0, 1.0) ).rgb;
+        vec3 neighbour = texture( bloom_h, clamp(uv + offset, 0.0, push.settings.y) ).rgb;
         // Gaussian denominator 2*sigma^2, with sigma = BLOOM_RADIUS / 2
         float half_bloom_rad_squared = float(BLOOM_RADIUS) * float(BLOOM_RADIUS) / 2.0;
         float weight = exp(-(float(y) * float(y)) / half_bloom_rad_squared);
@@ -60,16 +60,18 @@ vec3 bloom(vec2 uv) {
 void main() {
     // Off: plain copy of the scene, pixel for pixel
     if (push.settings.x < 0.5) {
-        vec3 colour = texelFetch(scene, ivec2(gl_FragCoord.xy), 0).rgb;
         vec2 uv = gl_FragCoord.xy / vec2(textureSize(scene, 0));
-        colour += bloom(uv) * BLOOM_STRENGTH;
+        // The scene only fills the top-left corner of its image (render scale, push.settings.y)
+        vec2 scene_uv = uv * push.settings.y;
+        vec3 colour = texture(scene, scene_uv).rgb;
+        colour += bloom(scene_uv) * BLOOM_STRENGTH;
         out_color = vec4(tone_map(colour), 1.0);
         return;
     }
 
     // Big retro pixels: every PIXEL_SIZE × PIXEL_SIZE block reads the same scene pixel
-    ivec2 block = ivec2(gl_FragCoord.xy / PIXEL_SIZE);
-    vec3 colour = tone_map(texelFetch(scene, ivec2(vec2(block) * PIXEL_SIZE), 0).rgb);
+    ivec2 block = ivec2(gl_FragCoord.xy / PIXEL_SIZE * push.settings.y);
+    vec3 colour = tone_map(texelFetch(scene, ivec2(vec2(block) * PIXEL_SIZE * push.settings.y), 0).rgb);
 
     // Work in sRGB (what the screen shows), so the pattern looks even to the eye
     vec3 srgb = pow(colour, vec3(1.0 / 2.2));

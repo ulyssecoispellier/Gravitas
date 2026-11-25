@@ -227,7 +227,8 @@ Measured: ~70 ms per frame (≈14 fps) with Earth filling the view, on a Retina 
 | Eclipse culling: the CPU lists, for each body, the few bodies that can shadow it (usually 0 or 1), instead of 16 bodies with asin/acos per pixel and per atmosphere sample | big on every lit pixel | ⬜ |
 | Eclipse quick-reject: skip a body with one dot product when it's too far from the Sun in the sky, before any asin/acos | cheap first step before culling | ✅ |
 | Bounce phase skip: skip a source body's 8 bounce samples when we only see its night side (lit fraction from the Sun–body–point angle), and when it's entirely below our horizon | full bounce cost, about half the orbit | ⬜ |
-| Render scale: draw the 3D scene at half the Retina resolution, upscale in the post pass (optional toggle) | ~4× on the scene | ⬜ |
+| Render scale: draw the 3D scene at half the Retina resolution, upscale in the post pass (H key; drawn into the top-left corner of the full-size images, so no recreation) | ~4× on the scene at 0.5, ~1.8× at 0.75 (H uses 0.75) | ✅ |
+| Temporal upscaling (DLSS / FSR 2 style): render at low resolution with a different sub-pixel jitter each frame, then rebuild a sharp full-resolution image from the previous frames (reprojected with the camera motion, rejected where they don't match). Same pass also cleans the atmosphere / bounce noise and allows dithered bloom | near-native sharpness at 25% of the pixels | ⬜ |
 | Bloom v2: blur a downsized copy (wide halos, even cheaper) | | ⬜ |
 
 ### 💻 Cross-platform (Windows · Linux · macOS)

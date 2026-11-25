@@ -1,13 +1,18 @@
 #version 450
 
 // Bloom pass 1: keeps only the very bright light and blurs it along x (one row)
-// post.frag then blurs this result along y: 13 + 13 reads instead of 13 * 13
+// post.frag then blurs this result along y: 33 + 33 reads instead of 33 * 33
 
 // Output: the glow blurred along x, written into bloom_image
 layout(location = 0) out vec4 out_color;
 
 // The scene image (set 0, binding 0)
 layout(set = 0, binding = 0) uniform sampler2D scene;
+
+// Same layout as `PostPushConstants` in renderer.rs
+layout(push_constant) uniform Push {
+    vec4 settings; // x = retro dithering on (1) / off (0), y = render scale (1.0 full, 0.75 with H)
+} push;
 
 // Only light above this brightness glows (1.0 = brighter than white)
 const float BLOOM_THRESHOLD = 1.0;
@@ -33,7 +38,7 @@ vec3 bloom(vec2 uv) {
 
     for (int x = -BLOOM_RADIUS; x <= BLOOM_RADIUS; x++) {
         vec2 offset = vec2(x, 0.0) * BLOOM_SPACING * texel;
-        vec3 neighbour = bright( texture( scene, clamp(uv + offset, 0.0, 1.0) ).rgb );
+        vec3 neighbour = bright( texture( scene, clamp(uv + offset, 0.0, push.settings.y) ).rgb );
         // Gaussian denominator 2*sigma^2, with sigma = BLOOM_RADIUS / 2
         float half_bloom_rad_squared = float(BLOOM_RADIUS) * float(BLOOM_RADIUS) / 2.0;
         float weight = exp(-(float(x) * float(x)) / half_bloom_rad_squared);
