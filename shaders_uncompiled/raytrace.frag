@@ -79,6 +79,11 @@ float sun_visibility(vec3 point, int skip) {
         float blocker_dist = length(to_blocker);
         if (blocker_dist > sun_dist) { continue; }           // beyond the Sun: can't shade us
 
+        // Quick reject: sine of the widest angle at which the blocker's disc can still touch the Sun's
+        float sin_sum = min((all_bodies.bodies[0].w / sun_dist) + (other.w / blocker_dist), 1.0);
+        // Blocker further from the Sun in our sky than that (cosines compared, no asin/acos): no eclipse
+        if (dot(to_blocker, light_dir) < blocker_dist * sqrt(1.0 - sin_sum * sin_sum)) { continue; }
+
         float a_sun = asin(clamp(all_bodies.bodies[0].w / sun_dist, 0.0, 1.0)); // body 0 = the Sun
         float a_b   = asin(clamp(other.w / blocker_dist, 0.0, 1.0));
         float theta = acos(clamp(dot(normalize(to_blocker), light_dir), -1.0, 1.0));
@@ -180,7 +185,7 @@ vec3 bounce_light(int self_index, vec3 point, float r1, float r2) {
         float dist = length(to_body);
         float sin_max = body.w / dist;
         // Too small in the sky (under ~1°) to light us noticeably
-        if (sin_max < 0.02) { continue; }
+        if (sin_max < 0.005) { continue; }
 
         // The cone the body fills in our sky: edge cosine and solid angle Ω
         float cos_max = sqrt(1.0 - sin_max * sin_max);

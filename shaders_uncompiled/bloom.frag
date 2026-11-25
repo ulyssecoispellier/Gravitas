@@ -11,10 +11,10 @@ layout(set = 0, binding = 0) uniform sampler2D scene;
 
 // Only light above this brightness glows (1.0 = brighter than white)
 const float BLOOM_THRESHOLD = 1.0;
-// Samples on each side of the pixel: the loop reads 2 * RADIUS + 1 = 13 pixels
-const int BLOOM_RADIUS = 6;
-// Screen pixels between two samples (wider glow for the same number of reads)
-const float BLOOM_SPACING = 4.0;
+// Samples on each side of the pixel: the loop reads 2 * RADIUS + 1 = 33 pixels
+const int BLOOM_RADIUS = 16;
+// Screen pixels between two samples: 1.5 lands between pixels, so the LINEAR sampler blends 2 (no dotted grid)
+const float BLOOM_SPACING = 1.5;
 
 // Keeps only the light above BLOOM_THRESHOLD (the part that glows)
 vec3 bright(vec3 c) {

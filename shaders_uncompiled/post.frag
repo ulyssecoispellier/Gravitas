@@ -28,10 +28,10 @@ const float PIXEL_SIZE = 3.0;
 const float LEVELS = 2.0;
 // How much of the glow is added on top of the scene
 const float BLOOM_STRENGTH = 0.6;
-// Samples on each side of the pixel: the loop reads 2 * RADIUS + 1 = 13 pixels
-const int BLOOM_RADIUS = 6;
-// Screen pixels between two samples (wider glow for the same number of reads)
-const float BLOOM_SPACING = 4.0;
+// Samples on each side of the pixel: the loop reads 2 * RADIUS + 1 = 33 pixels
+const int BLOOM_RADIUS = 16;
+// Screen pixels between two samples: 1.5 lands between pixels, so the LINEAR sampler blends 2 (no dotted grid)
+const float BLOOM_SPACING = 1.5;
 
 // ACES tone mapping: squeezes any brightness (0..∞) into 0..1, like a film camera
 vec3 tone_map(vec3 x) {

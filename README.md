@@ -222,9 +222,11 @@ Measured: ~70 ms per frame (≈14 fps) with Earth filling the view, on a Retina 
 | | Gain | Status |
 |---|---|---|
 | Measure first: toggle bloom / atmospheres / sample counts to see where the GPU time goes | — | ⬜ |
-| Separable bloom: blur horizontally, then vertically (26 reads per pixel instead of 169), with one extra image and pass | ~6× on bloom | ⬜ |
+| Separable bloom: blur horizontally, then vertically (66 reads per pixel instead of 169: radius 16, spacing 1.5), with one extra image and pass | ~2.5× on bloom, no grain | ✅ |
 | Atmosphere transmittance LUT: precompute the air towards the Sun (height × Sun angle) in a small 2D texture, instead of an 8-step march per sample (Bruneton / Hillaire) | ~5–8× on atmospheres | ⬜ |
 | Eclipse culling: the CPU lists, for each body, the few bodies that can shadow it (usually 0 or 1), instead of 16 bodies with asin/acos per pixel and per atmosphere sample | big on every lit pixel | ⬜ |
+| Eclipse quick-reject: skip a body with one dot product when it's too far from the Sun in the sky, before any asin/acos | cheap first step before culling | ✅ |
+| Bounce phase skip: skip a source body's 8 bounce samples when we only see its night side (lit fraction from the Sun–body–point angle), and when it's entirely below our horizon | full bounce cost, about half the orbit | ⬜ |
 | Render scale: draw the 3D scene at half the Retina resolution, upscale in the post pass (optional toggle) | ~4× on the scene | ⬜ |
 | Bloom v2: blur a downsized copy (wide halos, even cheaper) | | ⬜ |
 
