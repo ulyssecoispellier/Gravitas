@@ -328,10 +328,11 @@ impl ApplicationHandler for App {
         _window_id: WindowId,
         event: WindowEvent,
     ) {
-        // egui sees every event first. If it used it (a click on the panel), the camera ignores it
+        // egui sees every event first. If it used it (a click on the panel), the camera ignores it.
+        // Keys always reach the app: egui marks Tab as used (widget focus), but there's no text field
         if let (Some(state), Some(window)) = (&mut self.egui_state, &self.window) {
             let response = state.on_window_event(window, &event);
-            if response.consumed {
+            if response.consumed && !matches!(event, WindowEvent::KeyboardInput { .. }) {
                 return;
             }
         }
@@ -449,7 +450,13 @@ impl ApplicationHandler for App {
 
                     // Cursor shape, clipboard… that egui asked the OS for
                     state.handle_platform_output(window, egui_outputs.platform_output);
-                    // Font image changes: not uploaded yet (step 4), cleared so egui doesn't panic
+                    // Font image changes: the renderer keeps its GPU copy up to date
+                    if let Some(renderer) = &mut self.renderer {
+                        renderer
+                            .create_egui_texture(&egui_outputs.textures_delta)
+                            .unwrap();
+                    }
+                    // Applied (or not needed): empty it so egui doesn't panic when it's dropped
                     egui_outputs.textures_delta.clear();
                 }
                 // A body was clicked: fly there (needs `&mut self`, free again now)

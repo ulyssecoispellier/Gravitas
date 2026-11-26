@@ -9,6 +9,8 @@
 
 use anyhow::{Ok, Result, anyhow};
 use bytemuck::Zeroable;
+use egui::TextureId::Managed;
+use egui::TexturesDelta;
 use vulkanalia::Version;
 use vulkanalia::loader::{LIBRARY, LibloadingLoader};
 use vulkanalia::prelude::v1_3::*;
@@ -177,6 +179,8 @@ pub struct Renderer {
     bloom_memory: vk::DeviceMemory,
     /// How shaders see `bloom_image`
     bloom_view: vk::ImageView,
+    /// egui's font atlas on the GPU (image, memory, view). None until egui sends it (first frame)
+    egui_texture: Option<(vk::Image, vk::DeviceMemory, vk::ImageView)>,
     /// Layout of the bloom pass
     bloom_pipeline_layout: vk::PipelineLayout,
     /// Bloom pass: reads `scene_image`, writes `bloom_image`
@@ -526,6 +530,8 @@ impl Renderer {
             &sphere_indices,
         )?;
 
+        let egui_texture = None;
+
         // The pipeline has its own copy of the shaders now, so the modules can go
         for module in [
             vert_module,
@@ -574,6 +580,7 @@ impl Renderer {
             bloom_pipeline,
             bloom_pipeline_layout,
             bloom_view,
+            egui_texture,
             post_pipeline_layout,
             post_pipeline,
             post_descriptor_set,
@@ -1140,6 +1147,42 @@ impl Renderer {
 
         Ok(())
     }
+
+    /// Keeps egui's font atlas on the GPU up to date with what egui sent this frame.
+    pub fn create_egui_texture(&mut self, textures_delta: &TexturesDelta) -> Result<()> {
+        // Only the font atlas (Managed(0)) sent as a whole image (pos None); patches come in step 4c
+        for (id, deltas) in textures_delta.set.iter() {
+            for delta in deltas {
+                if *id == Managed(0) && delta.pos.is_none() {
+                    // A new atlas replaces the old one: free the old texture first (if any)
+                    if let Some((gui_img, gui_memory, gui_img_view)) = self.egui_texture {
+                        unsafe {
+                            self.device.device_wait_idle()?;
+                            self.device.destroy_image_view(gui_img_view, None);
+                            self.device.destroy_image(gui_img, None);
+                            self.device.free_memory(gui_memory, None);
+                        }
+                    }
+
+                    // The pixels (sRGB, premultiplied alpha), uploaded as a new GPU texture and kept
+                    let egui::ImageData::Color(image) = &delta.image;
+                    self.egui_texture = Some(create_texture(
+                        &self.instance,
+                        &self.device,
+                        self.physical_device,
+                        self.graphics_queue,
+                        self.command_pool,
+                        &image.pixels,
+                        image.width() as u32,
+                        image.height() as u32,
+                        1,
+                        vk::Format::R8G8B8A8_SRGB,
+                    )?);
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Destroys every Vulkan object, in reverse order of creation (children before parents).
@@ -1148,6 +1191,11 @@ impl Drop for Renderer {
         unsafe {
             // Never destroy something the GPU might still be using
             self.device.device_wait_idle().unwrap();
+            if let Some((gui_img, gui_memory, gui_img_view)) = self.egui_texture {
+                self.device.destroy_image_view(gui_img_view, None);
+                self.device.destroy_image(gui_img, None);
+                self.device.free_memory(gui_memory, None);
+            }
             // Sync objects and commands
             self.device.destroy_semaphore(self.image_available, None);
             for &r_f in &self.render_finished {
