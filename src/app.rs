@@ -24,6 +24,8 @@ const SUN_COLOUR: [f32; 3] = [1.0, 0.97, 0.92]; // white (yellow only through an
 
 /// One planet's starting data.
 struct BodyData {
+    /// Shown in the Celestial Bodies panel
+    name: &'static str,
     /// Distance from the Sun (AU)
     distance: f64,
     /// Mass, relative to the Sun
@@ -39,8 +41,8 @@ struct BodyData {
 }
 
 const BODIES: [BodyData; 8] = [
-    // Mercury
     BodyData {
+        name: "Mercury",
         distance: 0.387,
         mass: 1.66e-7,
         radius: 1.631e-5,
@@ -48,8 +50,8 @@ const BODIES: [BodyData; 8] = [
         atmosphere: [0.0, 0.0, 0.0, 0.0],
         haze: [0.0, 0.0, 0.0, 0.0],
     },
-    // Venus
     BodyData {
+        name: "Venus",
         distance: 0.723,
         mass: 2.45e-6,
         radius: 4.045e-5,
@@ -57,8 +59,8 @@ const BODIES: [BodyData; 8] = [
         atmosphere: [6.0, 5.0, 3.5, 1.12],
         haze: [2.0, 2.0, 1.8, 0.7],
     },
-    // Earth (textured)
     BodyData {
+        name: "Earth",
         distance: 1.000,
         mass: 3.003e-6,
         radius: 4.259e-5,
@@ -66,8 +68,8 @@ const BODIES: [BodyData; 8] = [
         atmosphere: [1.5, 3.6, 8.8, 1.15],
         haze: [0.8, 0.8, 0.8, 0.76],
     },
-    // Mars
     BodyData {
+        name: "Mars",
         distance: 1.524,
         mass: 3.23e-7,
         radius: 2.266e-5,
@@ -75,8 +77,8 @@ const BODIES: [BodyData; 8] = [
         atmosphere: [0.6, 0.35, 0.2, 1.06],
         haze: [0.3, 0.4, 0.6, 0.8],
     },
-    // Jupiter
     BodyData {
+        name: "Jupiter",
         distance: 5.203,
         mass: 9.55e-4,
         radius: 4.673e-4,
@@ -84,8 +86,8 @@ const BODIES: [BodyData; 8] = [
         atmosphere: [2.0, 1.6, 1.0, 1.05],
         haze: [0.5, 0.45, 0.4, 0.7],
     },
-    // Saturn
     BodyData {
+        name: "Saturn",
         distance: 9.537,
         mass: 2.86e-4,
         radius: 3.893e-4,
@@ -93,8 +95,8 @@ const BODIES: [BodyData; 8] = [
         atmosphere: [2.0, 1.7, 1.1, 1.05],
         haze: [0.5, 0.45, 0.4, 0.7],
     },
-    // Uranus
     BodyData {
+        name: "Uranus",
         distance: 19.19,
         mass: 4.37e-5,
         radius: 1.695e-4,
@@ -102,8 +104,8 @@ const BODIES: [BodyData; 8] = [
         atmosphere: [0.8, 2.5, 3.0, 1.08],
         haze: [0.2, 0.2, 0.2, 0.7],
     },
-    // Neptune
     BodyData {
+        name: "Neptune",
         distance: 30.07,
         mass: 5.15e-5,
         radius: 1.646e-4,
@@ -115,6 +117,8 @@ const BODIES: [BodyData; 8] = [
 
 /// One moon on rails: a fixed circular orbit around its planet (no gravity, see README).
 struct MoonData {
+    /// Shown in the Celestial Bodies panel, under its planet
+    name: &'static str,
     /// Index of its planet in `bodies` (Earth = 3, Jupiter = 5, Saturn = 6, Neptune = 8)
     parent: usize,
     /// Distance from the planet's centre (AU)
@@ -152,8 +156,8 @@ struct Flight {
 
 /// Major moons, written to GPU slots 9..15 every frame. Real distances (AU) and periods (years)
 const MOONS: [MoonData; 7] = [
-    // Moon (Earth)
     MoonData {
+        name: "Moon",
         parent: 3,
         distance: 2.570e-3,
         period: 0.0748,
@@ -162,8 +166,8 @@ const MOONS: [MoonData; 7] = [
         atmosphere: [0.0, 0.0, 0.0, 0.0],
         haze: [0.0, 0.0, 0.0, 0.0],
     },
-    // Io (Jupiter)
     MoonData {
+        name: "Io",
         parent: 5,
         distance: 2.820e-3,
         period: 0.00485,
@@ -172,8 +176,8 @@ const MOONS: [MoonData; 7] = [
         atmosphere: [0.0, 0.0, 0.0, 0.0],
         haze: [0.0, 0.0, 0.0, 0.0],
     },
-    // Europa (Jupiter)
     MoonData {
+        name: "Europa",
         parent: 5,
         distance: 4.486e-3,
         period: 0.00972,
@@ -182,8 +186,8 @@ const MOONS: [MoonData; 7] = [
         atmosphere: [0.0, 0.0, 0.0, 0.0],
         haze: [0.0, 0.0, 0.0, 0.0],
     },
-    // Ganymede (Jupiter)
     MoonData {
+        name: "Ganymede",
         parent: 5,
         distance: 7.155e-3,
         period: 0.0196,
@@ -192,8 +196,8 @@ const MOONS: [MoonData; 7] = [
         atmosphere: [0.0, 0.0, 0.0, 0.0],
         haze: [0.0, 0.0, 0.0, 0.0],
     },
-    // Callisto (Jupiter)
     MoonData {
+        name: "Callisto",
         parent: 5,
         distance: 1.2585e-2,
         period: 0.0457,
@@ -202,8 +206,8 @@ const MOONS: [MoonData; 7] = [
         atmosphere: [0.0, 0.0, 0.0, 0.0],
         haze: [0.0, 0.0, 0.0, 0.0],
     },
-    // Titan (Saturn)
     MoonData {
+        name: "Titan",
         parent: 6,
         distance: 8.168e-3,
         period: 0.0436,
@@ -212,8 +216,8 @@ const MOONS: [MoonData; 7] = [
         atmosphere: [0.3, 0.4, 0.6, 1.3],
         haze: [1.5, 1.0, 0.4, 0.6],
     },
-    // Triton (Neptune, retrograde)
     MoonData {
+        name: "Triton",
         parent: 8,
         distance: 2.371e-3,
         period: -0.0161,
@@ -282,10 +286,10 @@ pub struct App {
     modifiers: ModifiersState,
     /// The camera flight in progress, if any (None = just following `focus`)
     flight: Option<Flight>,
-    /*/// egui's state: runs the UI description each frame and remembers what is open
+    /// egui's state: runs the UI description each frame and remembers what is open
     egui_ctx: egui::Context,
     /// Turns winit events into egui input. None until the window exists (see `resumed`)
-    egui_state: Option<egui_winit::State>,*/
+    egui_state: Option<egui_winit::State>,
 }
 
 // winit calls these methods when something happens (the app starts, a key is pressed...)
@@ -296,6 +300,16 @@ impl ApplicationHandler for App {
         //.with_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
 
         let window = event_loop.create_window(attributes).unwrap();
+
+        // egui's input translator: needs the window (screen scale, clipboard)
+        self.egui_state = Some(egui_winit::State::new(
+            self.egui_ctx.clone(),
+            egui::ViewportId::ROOT,
+            &window,
+            Some(window.scale_factor() as f32),
+            None,
+            None,
+        ));
 
         // The renderer needs the window, to draw into it
         self.renderer = Some(Renderer::new(&window).unwrap());
@@ -314,6 +328,14 @@ impl ApplicationHandler for App {
         _window_id: WindowId,
         event: WindowEvent,
     ) {
+        // egui sees every event first. If it used it (a click on the panel), the camera ignores it
+        if let (Some(state), Some(window)) = (&mut self.egui_state, &self.window) {
+            let response = state.on_window_event(window, &event);
+            if response.consumed {
+                return;
+            }
+        }
+
         match event {
             // The window's red button
             WindowEvent::CloseRequested => event_loop.exit(),
@@ -367,6 +389,74 @@ impl ApplicationHandler for App {
             }
             // Time to draw a frame: advance the physics, then render
             WindowEvent::RedrawRequested => {
+                // UI: give egui this frame's input, describe the panel, then handle what it returns
+                // Slot clicked in the panel this frame, if any. Declared out here: the flight can
+                // only start once egui's borrows of `self` have ended (after the `if let` below)
+                let mut selected_body = None;
+                if let (Some(state), Some(window)) = (&mut self.egui_state, &self.window) {
+                    let mut egui_outputs =
+                        self.egui_ctx.run_ui(state.take_egui_input(window), |ui| {
+                            egui::Window::new("Celestial Bodies").show(ui.ctx(), |ui| {
+                                // The Sun (slot 0), highlighted while the camera follows it
+                                if ui
+                                    .selectable_label(
+                                        if self.focus == 0 { true } else { false },
+                                        "Sun",
+                                    )
+                                    .clicked()
+                                {
+                                    // Only remember it: `self` is still borrowed by egui here
+                                    selected_body = Some(0);
+                                }
+                                // One entry per planet: index in BODIES + 1 = GPU slot (1..8)
+                                ui.collapsing("Planets", |planets_ui| {
+                                    for body_idx in 0..BODIES.len() {
+                                        if planets_ui
+                                            .selectable_label(
+                                                if self.focus == body_idx + 1 {
+                                                    true
+                                                } else {
+                                                    false
+                                                },
+                                                BODIES[body_idx].name,
+                                            )
+                                            .clicked()
+                                        {
+                                            selected_body = Some(body_idx + 1);
+                                        }
+                                    }
+                                });
+                                // One entry per moon: index in MOONS + 9 = GPU slot (9..15)
+                                ui.collapsing("Satelites", |satelites_ui| {
+                                    for body_idx in 0..MOONS.len() {
+                                        if satelites_ui
+                                            .selectable_label(
+                                                if self.focus == body_idx + 9 {
+                                                    true
+                                                } else {
+                                                    false
+                                                },
+                                                MOONS[body_idx].name,
+                                            )
+                                            .clicked()
+                                        {
+                                            selected_body = Some(body_idx + 9);
+                                        }
+                                    }
+                                });
+                            });
+                        });
+
+                    // Cursor shape, clipboard… that egui asked the OS for
+                    state.handle_platform_output(window, egui_outputs.platform_output);
+                    // Font image changes: not uploaded yet (step 4), cleared so egui doesn't panic
+                    egui_outputs.textures_delta.clear();
+                }
+                // A body was clicked: fly there (needs `&mut self`, free again now)
+                if let Some(slot) = selected_body {
+                    self.start_flight(slot);
+                }
+
                 // How much real time passed since the last frame?
                 let now = Instant::now();
                 let frame_time = (now - self.last_frame).as_secs_f64();
@@ -658,6 +748,8 @@ impl App {
             focus: 3,
             modifiers: ModifiersState::empty(),
             flight: None,
+            egui_ctx: egui::Context::default(),
+            egui_state: None,
         }
     }
 
