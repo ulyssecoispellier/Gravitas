@@ -182,6 +182,8 @@ pub struct Renderer {
     bloom_view: vk::ImageView,
     /// egui's font atlas on the GPU (image, memory, view). None until egui sends it (first frame)
     egui_texture: Option<(vk::Image, vk::DeviceMemory, vk::ImageView)>,
+    /// CPU copy of egui's font atlas: patches (new letters) are pasted here, then the whole atlas is re-uploaded
+    egui_atlas: Option<egui::ColorImage>,
     /// Layout of the bloom pass
     bloom_pipeline_layout: vk::PipelineLayout,
     /// Bloom pass: reads `scene_image`, writes `bloom_image`
@@ -196,6 +198,8 @@ pub struct Renderer {
     post_pipeline: vk::Pipeline,
     /// Set 0 of the post pass: the scene image
     post_descriptor_set: vk::DescriptorSet,
+    /// Set 0 of the egui pass: binding 0 = the font atlas (written when egui sends it)
+    egui_descriptor_set: vk::DescriptorSet,
     /// Earth's texture (pixels from textures/earth/albedo.jpg)
     texture_image: vk::Image,
     /// The memory behind `texture_image` (GPU-only)
@@ -217,6 +221,7 @@ pub struct Renderer {
     descriptor_set: vk::DescriptorSet,
     /// Every body's position + radius (uniform buffer, read by the planets' shader)
     bodies_buffer: vk::Buffer,
+    egui_buffers: Option<(vk::Buffer, vk::DeviceMemory, vk::Buffer, vk::DeviceMemory)>,
     /// The memory behind `bodies_buffer` (CPU-writable, updated every frame)
     bodies_memory: vk::DeviceMemory,
 }
@@ -478,18 +483,18 @@ impl Renderer {
             .mipmap_mode(vk::SamplerMipmapMode::LINEAR);
         let post_sampler = unsafe { device.create_sampler(&post_sampler_info, None)? };
 
-        // Descriptor pool: 2 sets (planets, post), each with 2 image + sampler slots and 1 uniform buffer
+        // Descriptor pool: 3 sets (planets, post, egui), each with 2 image + sampler slots and 1 uniform buffer
         let pool_size = vk::DescriptorPoolSize::builder()
             .type_(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .descriptor_count(4);
+            .descriptor_count(6);
         let uniform_pool_size = vk::DescriptorPoolSize::builder()
             .type_(vk::DescriptorType::UNIFORM_BUFFER)
-            .descriptor_count(2);
+            .descriptor_count(3);
         let descriptor_pool = unsafe {
             device.create_descriptor_pool(
                 &vk::DescriptorPoolCreateInfo::builder()
                     .pool_sizes(&[pool_size, uniform_pool_size])
-                    .max_sets(2),
+                    .max_sets(3),
                 None,
             )?
         };
@@ -526,6 +531,14 @@ impl Renderer {
                     .set_layouts(&[descriptor_set_layout]),
             )?
         }[0];
+        // egui descriptor set: empty for now, the font atlas is written in when egui sends it
+        let egui_descriptor_set = unsafe {
+            device.allocate_descriptor_sets(
+                &vk::DescriptorSetAllocateInfo::builder()
+                    .descriptor_pool(descriptor_pool)
+                    .set_layouts(&[descriptor_set_layout]),
+            )?
+        }[0];
         write_image_descriptor(&device, post_descriptor_set, 0, post_sampler, scene_view);
         write_image_descriptor(&device, post_descriptor_set, 2, post_sampler, bloom_view);
 
@@ -549,6 +562,8 @@ impl Renderer {
         )?;
 
         let egui_texture = None;
+        let egui_atlas = None;
+        let egui_buffers = None;
 
         // The pipeline has its own copy of the shaders now, so the modules can go
         for module in [
@@ -603,9 +618,11 @@ impl Renderer {
             egui_pipeline_layout,
             bloom_view,
             egui_texture,
+            egui_atlas,
             post_pipeline_layout,
             post_pipeline,
             post_descriptor_set,
+            egui_descriptor_set,
             texture_image,
             texture_memory,
             texture_view,
@@ -618,6 +635,7 @@ impl Renderer {
             descriptor_pool,
             descriptor_set,
             bodies_buffer,
+            egui_buffers,
             bodies_memory,
         })
     }
@@ -635,6 +653,8 @@ impl Renderer {
         // Render scale of the 3D scene: 1.0 = full resolution, 0.5 = half (H key)
         res_multiplier: f32,
         bodies: &BodiesUniform,
+        egui_triangles: &[egui::ClippedPrimitive],
+        pixels_per_point: f32,
     ) -> Result<()> {
         unsafe {
             // 1. Wait until the GPU has finished the previous frame, then re-arm the fence
@@ -666,7 +686,56 @@ impl Renderer {
             // 3. Record this frame's commands
             self.device
                 .reset_command_buffer(self.command_buffer, vk::CommandBufferResetFlags::empty())?;
-            self.record_commands(index, pushes, ray_push, retro, res_multiplier)?;
+
+            let mut all_vertices = Vec::new();
+            let mut all_indices = Vec::new();
+            let mut draws = Vec::new();
+            for triangles in egui_triangles.iter() {
+                if let egui::epaint::Primitive::Mesh(mesh) = &triangles.primitive {
+                    draws.push((
+                        triangles.clip_rect,
+                        all_indices.len() as u32,
+                        mesh.indices.len() as u32,
+                        all_vertices.len() as i32,
+                    ));
+                    all_vertices.extend_from_slice(&mesh.vertices);
+                    all_indices.extend_from_slice(&mesh.indices);
+                }
+            }
+            if let Some((vb, vm, ib, im)) = self.egui_buffers.take() {
+                self.device.destroy_buffer(vb, None);
+                self.device.free_memory(vm, None);
+                self.device.destroy_buffer(ib, None);
+                self.device.free_memory(im, None);
+            }
+            if !all_indices.is_empty() {
+                let (vertex_buffer, vertex_memory) = create_buffer(
+                    &self.instance,
+                    &self.device,
+                    self.physical_device,
+                    vk::BufferUsageFlags::VERTEX_BUFFER,
+                    &all_vertices,
+                )?;
+                let (index_buffer, index_memory) = create_buffer(
+                    &self.instance,
+                    &self.device,
+                    self.physical_device,
+                    vk::BufferUsageFlags::INDEX_BUFFER,
+                    &all_indices,
+                )?;
+                self.egui_buffers =
+                    Some((vertex_buffer, vertex_memory, index_buffer, index_memory));
+            }
+
+            self.record_commands(
+                index,
+                pushes,
+                ray_push,
+                retro,
+                res_multiplier,
+                &draws,
+                pixels_per_point,
+            )?;
 
             // 4. Submit: wait for the image before writing colours,
             // signal `render_finished` when done, then signal the fence
@@ -711,6 +780,8 @@ impl Renderer {
         retro: bool,
         // Render scale of the 3D scene: 1.0 = full resolution, 0.5 = half (H key)
         res_multiplier: f32,
+        draws: &[(egui::Rect, u32, u32, i32)],
+        pixels_per_point: f32,
     ) -> Result<()> {
         unsafe {
             self.device.begin_command_buffer(
@@ -1042,6 +1113,58 @@ impl Renderer {
                 bytemuck::bytes_of(&post_push),
             );
             self.device.cmd_draw(self.command_buffer, 3, 1, 0, 0);
+
+            // egui pass: the Celestial Bodies panel, drawn on top of the finished image
+            if let Some((vertex_buffer, _, index_buffer, _)) = self.egui_buffers {
+                self.device.cmd_bind_pipeline(
+                    self.command_buffer,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    self.egui_pipeline,
+                );
+                // Set 0 = the font atlas
+                self.device.cmd_bind_descriptor_sets(
+                    self.command_buffer,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    self.egui_pipeline_layout,
+                    0,
+                    &[self.egui_descriptor_set],
+                    &[],
+                );
+                // All the panel's vertices and indices, every mesh one after another
+                self.device
+                    .cmd_bind_vertex_buffers(self.command_buffer, 0, &[vertex_buffer], &[0]);
+                self.device.cmd_bind_index_buffer(
+                    self.command_buffer,
+                    index_buffer,
+                    0,
+                    vk::IndexType::UINT32,
+                );
+                // egui.vert needs the window size in points (pixels / pixels_per_point)
+                let screen_size_points = [
+                    self.swapchain.extent.width as f32 / pixels_per_point,
+                    self.swapchain.extent.height as f32 / pixels_per_point,
+                ];
+                self.device.cmd_push_constants(
+                    self.command_buffer,
+                    self.egui_pipeline_layout,
+                    vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+                    0,
+                    bytemuck::bytes_of(&screen_size_points),
+                );
+
+                // One draw per mesh: its own indices (0-based) land on its vertices thanks to vertex_offset
+                for &(_rect, first_index, index_count, vertex_offset) in draws {
+                    self.device.cmd_draw_indexed(
+                        self.command_buffer,
+                        index_count,
+                        1,
+                        first_index,
+                        vertex_offset,
+                        0,
+                    );
+                }
+            }
+
             self.device.cmd_end_rendering(self.command_buffer);
 
             // Barrier: switch the image to "ready to be shown on screen"
@@ -1172,36 +1295,65 @@ impl Renderer {
 
     /// Keeps egui's font atlas on the GPU up to date with what egui sent this frame.
     pub fn create_egui_texture(&mut self, textures_delta: &TexturesDelta) -> Result<()> {
-        // Only the font atlas (Managed(0)) sent as a whole image (pos None); patches come in step 4c
+        // 1. Update the CPU copy of the font atlas (Managed(0), the only texture the panel uses)
+        let mut changed = false;
         for (id, deltas) in textures_delta.set.iter() {
+            if *id != Managed(0) {
+                continue;
+            }
             for delta in deltas {
-                if *id == Managed(0) && delta.pos.is_none() {
-                    // A new atlas replaces the old one: free the old texture first (if any)
-                    if let Some((gui_img, gui_memory, gui_img_view)) = self.egui_texture {
-                        unsafe {
-                            self.device.device_wait_idle()?;
-                            self.device.destroy_image_view(gui_img_view, None);
-                            self.device.destroy_image(gui_img, None);
-                            self.device.free_memory(gui_memory, None);
+                let egui::ImageData::Color(image) = &delta.image;
+                match delta.pos {
+                    // A whole new atlas (first frame, or it grew): replace the copy
+                    None => self.egui_atlas = Some((**image).clone()),
+                    // A patch (new letters): paste it row by row at (x, y) into the copy
+                    Some([x, y]) => {
+                        if let Some(atlas) = &mut self.egui_atlas {
+                            let [patch_w, patch_h] = image.size;
+                            let atlas_w = atlas.size[0];
+                            for row in 0..patch_h {
+                                let src = row * patch_w;
+                                let dst = (y + row) * atlas_w + x;
+                                atlas.pixels[dst..dst + patch_w]
+                                    .copy_from_slice(&image.pixels[src..src + patch_w]);
+                            }
                         }
                     }
-
-                    // The pixels (sRGB, premultiplied alpha), uploaded as a new GPU texture and kept
-                    let egui::ImageData::Color(image) = &delta.image;
-                    self.egui_texture = Some(create_texture(
-                        &self.instance,
-                        &self.device,
-                        self.physical_device,
-                        self.graphics_queue,
-                        self.command_pool,
-                        &image.pixels,
-                        image.width() as u32,
-                        image.height() as u32,
-                        1,
-                        vk::Format::R8G8B8A8_SRGB,
-                    )?);
                 }
+                changed = true;
             }
+        }
+        if !changed {
+            return Ok(());
+        }
+
+        // 2. Free the old GPU texture (the GPU may still be drawing with it: wait first)
+        if let Some((gui_img, gui_memory, gui_img_view)) = self.egui_texture.take() {
+            unsafe {
+                self.device.device_wait_idle()?;
+                self.device.destroy_image_view(gui_img_view, None);
+                self.device.destroy_image(gui_img, None);
+                self.device.free_memory(gui_memory, None);
+            }
+        }
+
+        // 3. Upload the whole updated atlas (sRGB, premultiplied alpha) as a new GPU texture
+        if let Some(atlas) = &self.egui_atlas {
+            let (image, memory, view) = create_texture(
+                &self.instance,
+                &self.device,
+                self.physical_device,
+                self.graphics_queue,
+                self.command_pool,
+                &atlas.pixels,
+                atlas.width() as u32,
+                atlas.height() as u32,
+                1,
+                vk::Format::R8G8B8A8_SRGB,
+            )?;
+            self.egui_texture = Some((image, memory, view));
+            // Point the egui set's binding 0 at the new atlas (clamp sampler: no wrap at the edges)
+            write_image_descriptor(&self.device, self.egui_descriptor_set, 0, self.post_sampler, view);
         }
         Ok(())
     }
@@ -1254,6 +1406,12 @@ impl Drop for Renderer {
             self.device
                 .destroy_pipeline_layout(self.ray_pipeline_layout, None);
             self.device.destroy_pipeline(self.egui_pipeline, None);
+            if let Some((vb, vm, ib, im)) = self.egui_buffers.take() {
+                self.device.destroy_buffer(vb, None);
+                self.device.free_memory(vm, None);
+                self.device.destroy_buffer(ib, None);
+                self.device.free_memory(im, None);
+            }
             self.device
                 .destroy_pipeline_layout(self.egui_pipeline_layout, None);
             self.device.destroy_pipeline(self.bloom_pipeline, None);

@@ -394,6 +394,9 @@ impl ApplicationHandler for App {
                 // Slot clicked in the panel this frame, if any. Declared out here: the flight can
                 // only start once egui's borrows of `self` have ended (after the `if let` below)
                 let mut selected_body = None;
+                // The panel's triangles and the screen scale, filled below, used by draw_frame later
+                let mut egui_triangles = Vec::new();
+                let mut pixels_per_point = 1.0;
                 if let (Some(state), Some(window)) = (&mut self.egui_state, &self.window) {
                     let mut egui_outputs =
                         self.egui_ctx.run_ui(state.take_egui_input(window), |ui| {
@@ -450,6 +453,11 @@ impl ApplicationHandler for App {
 
                     // Cursor shape, clipboard… that egui asked the OS for
                     state.handle_platform_output(window, egui_outputs.platform_output);
+                    // Shapes (boxes, text) → triangles the GPU can draw; 2 pixels per point on Retina
+                    pixels_per_point = egui_outputs.pixels_per_point;
+                    egui_triangles = self
+                        .egui_ctx
+                        .tessellate(egui_outputs.shapes, pixels_per_point);
                     // Font image changes: the renderer keeps its GPU copy up to date
                     if let Some(renderer) = &mut self.renderer {
                         renderer
@@ -647,6 +655,8 @@ impl ApplicationHandler for App {
                             self.retro,
                             if self.half_res { 0.75 } else { 1.0 },
                             &bodies_data,
+                            &egui_triangles,
+                            pixels_per_point,
                         )
                         .unwrap();
                 }
