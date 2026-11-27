@@ -22,6 +22,7 @@ use vulkanalia::window as vk_window;
 use winit::window::Window;
 
 use crate::mesh::uv_sphere;
+use crate::renderer::pipeline::create_egui_pipeline;
 
 mod device;
 mod instance;
@@ -185,6 +186,10 @@ pub struct Renderer {
     bloom_pipeline_layout: vk::PipelineLayout,
     /// Bloom pass: reads `scene_image`, writes `bloom_image`
     bloom_pipeline: vk::Pipeline,
+    /// Layout of the egui pass (font atlas at set 0 + window size push constant)
+    egui_pipeline_layout: vk::PipelineLayout,
+    /// egui pass: draws the panel's triangles over the post pass, with transparency
+    egui_pipeline: vk::Pipeline,
     /// Layout of the post-processing pass
     post_pipeline_layout: vk::PipelineLayout,
     /// Post-processing pass: reads `scene_image`, writes the swapchain image
@@ -376,6 +381,19 @@ impl Renderer {
             false,
         )?;
 
+        // egui pass: its own vertex format (20-byte egui vertices), drawn onto the screen image
+        let egui_vert_module =
+            create_shader_module(&device, include_bytes!("../shaders/egui.vert.spv"))?;
+        let egui_frag_module =
+            create_shader_module(&device, include_bytes!("../shaders/egui.frag.spv"))?;
+        let (egui_pipeline_layout, egui_pipeline) = create_egui_pipeline(
+            &device,
+            swapchain.format,
+            egui_vert_module,
+            egui_frag_module,
+            descriptor_set_layout,
+        )?;
+
         // Mesh pass: the planets
         let (pipeline_layout, pipeline) = create_pipeline(
             &device,
@@ -540,6 +558,8 @@ impl Renderer {
             ray_frag_module,
             post_frag_module,
             bloom_frag_module,
+            egui_vert_module,
+            egui_frag_module,
         ] {
             unsafe {
                 device.destroy_shader_module(module, None);
@@ -579,6 +599,8 @@ impl Renderer {
             bloom_memory,
             bloom_pipeline,
             bloom_pipeline_layout,
+            egui_pipeline,
+            egui_pipeline_layout,
             bloom_view,
             egui_texture,
             post_pipeline_layout,
@@ -1231,6 +1253,9 @@ impl Drop for Renderer {
             self.device.destroy_pipeline(self.ray_pipeline, None);
             self.device
                 .destroy_pipeline_layout(self.ray_pipeline_layout, None);
+            self.device.destroy_pipeline(self.egui_pipeline, None);
+            self.device
+                .destroy_pipeline_layout(self.egui_pipeline_layout, None);
             self.device.destroy_pipeline(self.bloom_pipeline, None);
             self.device
                 .destroy_pipeline_layout(self.bloom_pipeline_layout, None);
